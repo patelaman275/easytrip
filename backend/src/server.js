@@ -153,6 +153,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 4.5. Undo Checkpoint
+  socket.on('undoCheckpoint', ({ rideCode }) => {
+    try {
+      const code = rideCode.toUpperCase();
+      const ride = rides[code];
+
+      if (ride && ride.checkpoints.length > 0) {
+        ride.checkpoints.pop();
+        console.log(`Checkpoint removed from ${code}`);
+
+        // Sync checkpoints to all room riders
+        io.to(code).emit('checkpointUndone', ride.checkpoints);
+      }
+    } catch (err) {
+      console.error('Failed to undo last checkpoint:', err.message);
+    }
+  });
+
   // 5. Update/Sync Destination and Route polylines
   socket.on('updateRoute', ({ rideCode, destination, route }) => {
     try {
@@ -195,14 +213,14 @@ io.on('connection', (socket) => {
   });
 
   // 6.5. Send Chat Message
-  socket.on('sendMessage', ({ rideCode, nickname, message }) => {
+  socket.on('sendMessage', ({ rideCode, nickname, message, msgId }) => {
     try {
       const code = rideCode.toUpperCase();
       const ride = rides[code];
 
       if (ride && ride.riders[socket.id]) {
         const chatMsg = {
-          _id: 'msg_' + Math.random().toString(36).substring(2, 9) + Date.now(),
+          _id: msgId || ('msg_' + Math.random().toString(36).substring(2, 9) + Date.now()),
           nickname,
           message,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

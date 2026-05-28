@@ -69,6 +69,8 @@ function App() {
   const [checkpoints, setCheckpoints] = useState([]);
   const [route, setRoute] = useState([]);
   const [isCreator, setIsCreator] = useState(false);
+  const [pendingCPCoords, setPendingCPCoords] = useState(null);
+  const [customCPName, setCustomCPName] = useState('');
 
   // Group Chat & System Logs (Right Panel)
   const [messages, setMessages] = useState([]);
@@ -153,8 +155,14 @@ function App() {
 
     socketRef.current.on('checkpointAdded', (updatedCheckpoints) => {
       setCheckpoints(updatedCheckpoints);
-      addSystemLog(`Leader dropped Checkpoint ${updatedCheckpoints.length}.`);
+      addSystemLog(`Leader dropped Checkpoint: ${updatedCheckpoints[updatedCheckpoints.length - 1]?.name || updatedCheckpoints.length}`);
       triggerNotification('🏁 Checkpoint added by the Group Leader!');
+    });
+
+    socketRef.current.on('checkpointUndone', (updatedCheckpoints) => {
+      setCheckpoints(updatedCheckpoints);
+      addSystemLog('Leader removed the last checkpoint.');
+      triggerNotification('↩️ Checkpoint undone by the Group Leader!');
     });
 
     socketRef.current.on('routeSynced', ({ destination, route }) => {
@@ -175,7 +183,11 @@ function App() {
     });
 
     socketRef.current.on('receiveMessage', (msg) => {
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => {
+        // Prevent duplicates from local echo
+        if (prev.some((m) => m._id === msg._id)) return prev;
+        return [...prev, msg];
+      });
     });
 
     socketRef.current.on('riderLeft', ({ nickname, riders }) => {
@@ -237,6 +249,17 @@ function App() {
   }, [nickname, isJoined, rideCode]);
 
   // 3. OSRM Road Routing API Integration
+  // Segment-summing algorithm to calculate exact road routing distance in km
+  const calculateRouteDistance = (path) => {
+    let totalDist = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const pt1 = path[i];
+      const pt2 = path[i + 1];
+      totalDist += calculateDistance(pt1[0], pt1[1], pt2[0], pt2[1]);
+    }
+    return totalDist;
+  };
+
   const fetchRoadRoute = async (start, dest, cps = []) => {
     try {
       // Sort checkpoints by order sequence
@@ -249,9 +272,9 @@ function App() {
         dest
       ];
 
-      // OSRM coordinates are structured: lng,lat separated by semicolons
+      // OSRM coordinates: lng,lat separated by semicolons. continue_straight=false forces absolute shortest paths.
       const coordString = pointsList.map(pt => `${pt.lng},${pt.lat}`).join(';');
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson&continue_straight=false`;
 
       const res = await fetch(url);
       const data = await res.json();
@@ -347,36 +370,73 @@ function App() {
         route: roadRoute,
       });
     } else {
-      // 2. Select checkpoints (dynamic road routing recalculation)
-      const cpIndex = checkpoints.length + 1;
-      const newCheckpoint = {
-        name: `CP-${cpIndex}`,
-        lat: latlng.lat,
-        lng: latlng.lng,
-        order: cpIndex,
-      };
-
-      triggerNotification(`Planning route segment via Checkpoint ${cpIndex}...`);
-      const updatedCPs = [...checkpoints, newCheckpoint];
-      setCheckpoints(updatedCPs);
-
-      // Re-calculate the winding road route passing through all checkpoints to destination
-      const roadRoute = await fetchRoadRoute(currentPosition, destination, updatedCPs);
-      setRoute(roadRoute);
-
-      // Broadcast checkpoints
-      socketRef.current.emit('addCheckpoint', {
-        rideCode,
-        checkpoint: newCheckpoint,
-      });
-
-      // Broadcast recalculated route geometry
-      socketRef.current.emit('updateRoute', {
-        rideCode,
-        destination,
-        route: roadRoute,
-      });
+      // 2. Select checkpoints (trigger naming modal popup)
+      setPendingCPCoords(latlng);
+      setCustomCPName('');
     }
+  };
+
+  const handleConfirmCheckpoint = async (name) => {
+    if (!pendingCPCoords || !rideCode) return;
+    const cpIndex = checkpoints.length + 1;
+    const cpName = name.trim() || `CP-${cpIndex}`;
+    const newCheckpoint = {
+      name: cpName,
+      lat: pendingCPCoords.lat,
+      lng: pendingCPCoords.lng,
+      order: cpIndex,
+    };
+
+    triggerNotification(`Planning route segment via ${cpName}...`);
+    const updatedCPs = [...checkpoints, newCheckpoint];
+    setCheckpoints(updatedCPs);
+
+    // Re-calculate the winding road route passing through all checkpoints to destination
+    const roadRoute = await fetchRoadRoute(currentPosition, destination, updatedCPs);
+    setRoute(roadRoute);
+
+    // Broadcast checkpoints
+    socketRef.current.emit('addCheckpoint', {
+      rideCode,
+      checkpoint: newCheckpoint,
+    });
+
+    // Broadcast recalculated route geometry
+    socketRef.current.emit('updateRoute', {
+      rideCode,
+      destination,
+      route: roadRoute,
+    });
+
+    // Clear pending checkpoint state
+    setPendingCPCoords(null);
+    setCustomCPName('');
+  };
+
+  const handleUndoCheckpoint = async () => {
+    if (!isCreator || !rideCode || checkpoints.length === 0) return;
+    
+    const updatedCPs = [...checkpoints];
+    const popped = updatedCPs.pop();
+    
+    triggerNotification(`Removing checkpoint: ${popped.name}...`);
+    setCheckpoints(updatedCPs);
+
+    // Re-calculate route without the last checkpoint
+    const roadRoute = await fetchRoadRoute(currentPosition, destination, updatedCPs);
+    setRoute(roadRoute);
+
+    // Emit undo checkpoint to server
+    socketRef.current.emit('undoCheckpoint', { rideCode });
+
+    // Broadcast recalculated route geometry
+    socketRef.current.emit('updateRoute', {
+      rideCode,
+      destination,
+      route: roadRoute,
+    });
+    
+    addSystemLog(`Undid checkpoint: ${popped.name}`);
   };
 
   const handleClearRoute = () => {
@@ -396,10 +456,27 @@ function App() {
     e.preventDefault();
     if (!chatInput.trim() || !isJoined || !rideCode) return;
 
+    const msgId = 'msg_' + Math.random().toString(36).substring(2, 9) + Date.now();
+    const chatMsg = {
+      _id: msgId,
+      nickname,
+      message: chatInput.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      color: '#fc6100',
+    };
+
+    // 1. Local echo: display immediately to avoid any lag or backend delays
+    setMessages((prev) => {
+      if (prev.some((m) => m._id === msgId)) return prev;
+      return [...prev, chatMsg];
+    });
+
+    // 2. Emit to socket room
     socketRef.current.emit('sendMessage', {
       rideCode,
       nickname,
       message: chatInput.trim(),
+      msgId,
     });
     setChatInput('');
   };
@@ -429,22 +506,41 @@ function App() {
     setTimeout(() => setToast(''), 4000);
   };
 
-  // Telemetry metric selectors
+  // Telemetry metric selectors using segment-summing and nearest-neighbor index algorithms
   const metrics = useMemo(() => {
-    if (!destination) {
+    if (!destination || route.length === 0) {
       return { distanceLeft: '0.0 km', progress: 0, eta: '--:--' };
     }
 
-    const totalDist = startPoint 
-      ? calculateDistance(startPoint.lat, startPoint.lng, destination.lat, destination.lng) 
-      : 10;
-    const remainingDist = calculateDistance(currentPosition.lat, currentPosition.lng, destination.lat, destination.lng);
-
-    const progressPercent = Math.min(100, Math.max(0, Math.round(((totalDist - remainingDist) / totalDist) * 100)));
+    // Calculate actual total road route distance (Algorithm!)
+    const totalRouteDistance = calculateRouteDistance(route);
     
+    // Find closest index on route coordinates using Nearest-Neighbor searching (Algorithm!)
+    let closestIndex = 0;
+    let minDistance = Infinity;
+    for (let i = 0; i < route.length; i++) {
+      const dist = calculateDistance(currentPosition.lat, currentPosition.lng, route[i][0], route[i][1]);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestIndex = i;
+      }
+    }
+
+    // Sum remaining road segments from closest index to the end destination (Algorithm!)
+    let remainingRouteDistance = 0;
+    for (let i = closestIndex; i < route.length - 1; i++) {
+      const pt1 = route[i];
+      const pt2 = route[i + 1];
+      remainingRouteDistance += calculateDistance(pt1[0], pt1[1], pt2[0], pt2[1]);
+    }
+
+    // Direct road progress percentage calculation
+    const progressPercent = Math.min(100, Math.max(0, Math.round(((totalRouteDistance - remainingRouteDistance) / totalRouteDistance) * 100)));
+    
+    // Accurate Road ETA Calculation
     let etaStr = '--:--';
     if (speed > 0) {
-      const timeHours = remainingDist / speed;
+      const timeHours = remainingRouteDistance / speed;
       const minsTotal = Math.round(timeHours * 60);
       const hours = Math.floor(minsTotal / 60);
       const mins = minsTotal % 60;
@@ -454,11 +550,11 @@ function App() {
     }
 
     return {
-      distanceLeft: `${remainingDist.toFixed(1)} km`,
+      distanceLeft: `${remainingRouteDistance.toFixed(1)} km`,
       progress: progressPercent,
       eta: etaStr,
     };
-  }, [destination, currentPosition, speed, startPoint]);
+  }, [destination, route, currentPosition, speed]);
 
   // Leaflet Marker Icons
   const createRiderIcon = (color, isMe = false, isSOS = false) => {
@@ -841,12 +937,22 @@ function App() {
             <div className="absolute top-4 right-4 z-20 flex gap-2.5 select-none">
               {/* Clear Route builder */}
               {destination && (
-                <button
-                  onClick={handleClearRoute}
-                  className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-[#1a1c23] rounded-lg font-black text-[10px] tracking-wider uppercase transition-all shadow-xl flex items-center gap-1.5"
-                >
-                  <Trash2 size={12} /> Clear Run
-                </button>
+                <div className="flex gap-2">
+                  {checkpoints.length > 0 && (
+                    <button
+                      onClick={handleUndoCheckpoint}
+                      className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-brandOrange border border-brandOrange/30 hover:border-brandOrange/60 rounded-lg font-black text-[10px] tracking-wider uppercase transition-all shadow-xl flex items-center gap-1.5"
+                    >
+                      Undo CP
+                    </button>
+                  )}
+                  <button
+                    onClick={handleClearRoute}
+                    className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-[#1a1c23] rounded-lg font-black text-[10px] tracking-wider uppercase transition-all shadow-xl flex items-center gap-1.5"
+                  >
+                    <Trash2 size={12} /> Clear Run
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1034,6 +1140,86 @@ function App() {
             >
               Dismiss
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* PLAN MILESTONE MODAL (CHECKPOINT NAMING) */}
+      {pendingCPCoords && (
+        <div className="absolute inset-0 bg-[#060608]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none animate-fade-in">
+          <div className="w-full max-w-sm p-6 rounded-xl glass-panel border border-[#242424] shadow-2xl relative flex flex-col gap-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-[#1a1c23]">
+              <div className="w-6 h-6 rounded bg-brandOrange/25 border border-brandOrange flex items-center justify-center font-black text-[10px] text-brandOrange rotate-45 shadow-inner">
+                <span className="-rotate-45">🏁</span>
+              </div>
+              <div className="flex flex-col text-left">
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">Plan Milestone</h3>
+                <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-widest">Checkpoint #{checkpoints.length + 1}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-neutral-400 text-[9px] font-black uppercase tracking-wider text-left">
+                Preset Stops
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { name: '☕ Tea Break' },
+                  { name: '⛽ Fuel Stop' },
+                  { name: '🍽️ Food Stop' },
+                  { name: '🛑 Regroup' },
+                  { name: '📸 Photo Stop' },
+                  { name: '🔧 Repair Break' }
+                ].map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => handleConfirmCheckpoint(preset.name)}
+                    className="py-2 px-3 rounded-lg border border-[#1a1c23] hover:border-brandOrange/50 bg-[#0c0d12] hover:bg-brandOrange/10 text-white font-extrabold text-[10px] text-left uppercase transition-all tracking-wide flex items-center gap-2"
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleConfirmCheckpoint(customCPName.trim() || `CP-${checkpoints.length + 1}`);
+            }} className="flex flex-col gap-3.5 border-t border-[#1a1c23] pt-4 mt-1">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-neutral-400 text-[9px] font-black uppercase tracking-wider text-left">
+                  Custom Callsign
+                </label>
+                <input
+                  type="text"
+                  value={customCPName}
+                  onChange={(e) => setCustomCPName(e.target.value)}
+                  placeholder="e.g. DIRT LANE OR SCENIC VIEW"
+                  maxLength={20}
+                  className="w-full py-2 px-3 rounded-lg glass-input text-xs font-bold tracking-widest uppercase border border-[#1a1c23] text-center"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingCPCoords(null);
+                    setCustomCPName('');
+                  }}
+                  className="grow py-2 bg-neutral-900 border border-[#1a1c23] hover:bg-neutral-800 text-neutral-400 font-extrabold text-[10px] tracking-widest uppercase rounded-lg transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="grow py-2 bg-brandOrange hover:bg-[#e25700] text-white font-black text-[10px] tracking-widest uppercase rounded-lg transition-all shadow-md shadow-brandOrange/10"
+                >
+                  Confirm
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
