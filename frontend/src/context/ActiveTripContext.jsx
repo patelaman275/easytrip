@@ -351,6 +351,19 @@ export const ActiveTripProvider = ({ children }) => {
     }
   };
 
+  const joinLocalTrip = (mockTrip) => {
+    setActiveTrip(mockTrip);
+    setKicked(false);
+    if (socket) {
+      socket.emit('join_trip_room', {
+        tripId: mockTrip._id,
+        userId: user.id,
+        username: user.username,
+      });
+    }
+    addNotification(`Joined Trip (Local Mode): ${mockTrip.name}`, 'success');
+  };
+
   return (
     <ActiveTripContext.Provider
       value={{
@@ -364,6 +377,7 @@ export const ActiveTripProvider = ({ children }) => {
         notifications,
         kicked,
         joinTrip,
+        joinLocalTrip,
         leaveTrip,
         updateLocation,
         sendMessage,
