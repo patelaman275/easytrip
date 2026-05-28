@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useActiveTrip } from '../../context/ActiveTripContext';
-import { LayoutDashboard, Compass, LogOut, ShieldAlert, Settings, Bike, Zap, User } from 'lucide-react';
+import { LayoutDashboard, Compass, LogOut, Bike, User } from 'lucide-react';
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
   const { user, logout } = useAuth();
@@ -20,15 +20,15 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
   ];
 
   return (
-    <aside className="w-64 bg-darkCard border-r border-white/5 flex flex-col justify-between h-screen sticky top-0 shrink-0">
+    <aside className="w-60 bg-[#0d0d0d] border-r border-[#242424] flex flex-col justify-between h-screen sticky top-0 shrink-0">
       {/* Brand Header */}
       <div>
-        <div className="p-6 border-b border-white/5 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-violet-600 flex items-center justify-center text-white font-extrabold select-none">
-            E
+        <div className="p-6 border-b border-[#242424] flex items-center gap-2">
+          <div className="w-7 h-7 rounded bg-brandOrange flex items-center justify-center text-white font-black text-base shadow-sm">
+            🧭
           </div>
-          <span className="text-lg font-black tracking-wider text-white">
-            EASY<span className="text-brandCyan">TRIP</span>
+          <span className="text-lg font-black tracking-tighter text-white">
+            EASY<span className="text-brandOrange">TRIP</span>
           </span>
         </div>
 
@@ -41,16 +41,16 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold tracking-wide transition-all ${
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded text-xs font-black uppercase tracking-wider transition-all ${
                   isActive
-                    ? 'bg-gradient-to-r from-cyan-500/10 to-violet-600/10 text-brandCyan border border-cyan-500/20'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                    ? 'bg-brandOrange/10 text-brandOrange border border-brandOrange/25'
+                    : 'text-neutral-500 hover:text-white hover:bg-neutral-900 border border-transparent'
                 }`}
               >
-                <Icon size={18} className={isActive ? 'text-brandCyan' : 'text-gray-400'} />
+                <Icon size={16} className={isActive ? 'text-brandOrange' : 'text-neutral-500'} />
                 {item.name}
                 {item.id === 'trip' && (
-                  <span className="ml-auto w-2 h-2 rounded-full bg-brandCyan animate-pulse-cyan"></span>
+                  <span className="ml-auto w-2 h-2 rounded-full bg-brandOrange animate-pulse-orange"></span>
                 )}
               </button>
             );
@@ -59,15 +59,15 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
       </div>
 
       {/* User profile details at the bottom */}
-      <div className="p-4 border-t border-white/5 space-y-4 bg-black/10">
+      <div className="p-4 border-t border-[#242424] space-y-4 bg-black/30">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-500 to-violet-600 flex items-center justify-center font-bold text-white uppercase select-none border border-white/10">
+          <div className="w-9 h-9 rounded bg-brandOrange flex items-center justify-center font-black text-white uppercase text-xs">
             {user.username.substring(0, 2)}
           </div>
           <div className="overflow-hidden">
-            <h4 className="text-sm font-bold text-white truncate">{user.username}</h4>
+            <h4 className="text-xs font-black text-white truncate uppercase">{user.username}</h4>
             <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[10px] bg-cyan-500/15 text-brandCyan font-semibold px-1.5 py-0.5 rounded border border-cyan-500/10">
+              <span className="text-[9px] bg-brandOrange/15 text-brandOrange font-black px-1.5 py-0.5 rounded border border-brandOrange/20 uppercase">
                 {user.riderDetails?.experienceLevel || 'Beginner'}
               </span>
             </div>
@@ -75,18 +75,18 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         </div>
 
         {user.riderDetails?.bikeModel && (
-          <div className="glass-panel-light p-2.5 rounded-lg flex items-center gap-2 text-xs text-gray-400">
-            <Bike size={14} className="text-brandCyan shrink-0" />
+          <div className="bg-[#1c1c1e] p-2 rounded border border-[#2c2c2e] flex items-center gap-2 text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
+            <Bike size={12} className="text-brandOrange shrink-0" />
             <span className="truncate">{user.riderDetails.bikeModel}</span>
           </div>
         )}
 
         <button
           onClick={logout}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-semibold tracking-wide transition-all"
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-brandCrimson text-[10px] font-black uppercase tracking-wider transition-all"
         >
-          <LogOut size={14} />
-          Sign Out
+          <LogOut size={12} />
+          Leave Session
         </button>
       </div>
     </aside>

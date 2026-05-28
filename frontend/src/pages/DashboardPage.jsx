@@ -4,7 +4,7 @@ import { useActiveTrip } from '../context/ActiveTripContext';
 import Sidebar from '../components/Dashboard/Sidebar';
 import Navbar from '../components/Dashboard/Navbar';
 import TripList from '../components/Dashboard/TripList';
-import { Compass, Bike, FileText, ChevronRight, CheckCircle2, User, Key, ArrowRight, ShieldCheck, Award } from 'lucide-react';
+import { Compass, Bike, FileText, User, ShieldCheck, Award } from 'lucide-react';
 import api from '../utils/api';
 import { MOCK_ROUTE_COORDINATES, MOCK_CHECKPOINTS } from '../utils/geoUtils';
 
@@ -79,29 +79,28 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
   };
 
   return (
-    <div className="flex h-screen bg-[#070b13] overflow-hidden select-none">
-      {/* 1. Left Sidebar Navigation */}
+    <div className="flex h-screen bg-darkBg overflow-hidden font-sans">
+      {/* Left Sidebar Navigation */}
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* 2. Main Content Frame */}
+      {/* Main Content Frame */}
       <div className="grow flex flex-col h-screen overflow-y-auto">
         <Navbar onCreateTripClick={() => setShowCreateModal(true)} />
 
         <main className="p-8 grow max-w-7xl mx-auto w-full">
           {activeTab === 'dashboard' && (
             <div className="space-y-8">
-              {/* Decorative Banner */}
-              <div className="glass-panel p-8 rounded-3xl relative overflow-hidden border border-cyan-500/10 bg-gradient-to-r from-cyan-950/20 via-slate-900/40 to-violet-950/20">
-                <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-tr from-cyan-500/10 to-violet-600/10 rounded-full blur-3xl pointer-events-none"></div>
+              {/* Premium Athletic Strava Banner */}
+              <div className="glass-panel p-6 rounded-lg border border-[#242424] bg-[#121212]">
                 <div className="relative z-10 max-w-2xl">
-                  <span className="text-[10px] bg-brandCyan/20 text-brandCyan font-black px-2.5 py-1 rounded-full uppercase tracking-wider border border-cyan-500/10 flex items-center gap-1.5 w-fit">
-                    <span className="w-1.5 h-1.5 rounded-full bg-brandCyan"></span> Ready To Ride
+                  <span className="text-[9px] bg-brandOrange/15 text-brandOrange font-black px-2.5 py-1 rounded uppercase tracking-wider border border-brandOrange/25 flex items-center gap-1.5 w-fit">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brandOrange"></span> Ready To Ride
                   </span>
-                  <h1 className="text-3xl font-black text-white tracking-tight mt-4">
+                  <h1 className="text-2xl font-black text-white tracking-tight mt-3 uppercase">
                     Coordinate Your Travel Group in Real-Time
                   </h1>
-                  <p className="text-gray-400 text-xs mt-2 leading-relaxed">
-                    EasyTrip links live GPS mapping telemetry with active separation warning radars, instant high-priority SOS alarms, checkpoint monitoring trackers, and direct chat logs.
+                  <p className="text-neutral-400 text-xs mt-1.5 leading-relaxed font-medium">
+                    EasyTrip connects live GPS mapping coordinates with separation alerts, high-priority SOS emergency alarms, checkpoint trackers, and group chat.
                   </p>
                 </div>
               </div>
@@ -112,70 +111,70 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
           )}
 
           {activeTab === 'profile' && (
-            <div className="max-w-2xl mx-auto space-y-8 fade-in">
+            <div className="max-w-xl mx-auto space-y-6 fade-in">
               <div>
-                <h2 className="text-2xl font-black text-white flex items-center gap-2">
-                  <User size={22} className="text-brandCyan" /> Rider Account Settings
+                <h2 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2">
+                  <User size={20} className="text-brandOrange" /> Rider Profile Settings
                 </h2>
-                <p className="text-gray-400 text-xs mt-0.5">Manage your vehicle profiles and details</p>
+                <p className="text-neutral-400 text-xs mt-0.5 font-medium">Manage your vehicle profiles and proficiency levels</p>
               </div>
 
               {profileSuccessMsg && (
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs flex items-center gap-2 font-bold animate-pulse">
-                  <ShieldCheck size={16} />
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-md text-xs flex items-center gap-2 font-bold">
+                  <ShieldCheck size={14} />
                   {profileSuccessMsg}
                 </div>
               )}
 
-              <form onSubmit={handleProfileUpdate} className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <form onSubmit={handleProfileUpdate} className="glass-panel p-5 rounded-lg border border-[#242424] space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Username</label>
+                    <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Username</label>
                     <input
                       type="text"
-                      className="w-full px-4 py-2.5 rounded-xl glass-input text-xs opacity-50 cursor-not-allowed"
+                      className="w-full px-3 py-2 rounded glass-input text-xs opacity-50 cursor-not-allowed"
                       value={user?.username}
                       disabled
                     />
                   </div>
 
                   <div>
-                    <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Email Address</label>
+                    <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Rider ID</label>
                     <input
-                      type="email"
-                      className="w-full px-4 py-2.5 rounded-xl glass-input text-xs opacity-50 cursor-not-allowed"
-                      value={user?.email}
+                      type="text"
+                      className="w-full px-3 py-2 rounded glass-input text-xs opacity-50 cursor-not-allowed"
+                      value={user?.id}
                       disabled
                     />
                   </div>
                 </div>
 
-                <div className="border-t border-white/5 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="border-t border-[#242424] pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Vehicle / Bike Model</label>
+                    <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Vehicle / Bike Model</label>
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">
-                        <Bike size={16} />
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500">
+                        <Bike size={14} />
                       </div>
                       <input
                         type="text"
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl glass-input text-xs"
+                        className="w-full pl-8 pr-3 py-2.5 rounded glass-input text-xs"
                         value={bikeModel}
                         onChange={(e) => setBikeModel(e.target.value)}
-                        placeholder="e.g. BMW R 1250 GS"
+                        placeholder="e.g. Specialized Tarmac SL8"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">License Plate</label>
+                    <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">License Plate</label>
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">
-                        <FileText size={16} />
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500">
+                        <FileText size={14} />
                       </div>
                       <input
                         type="text"
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl glass-input text-xs"
+                        className="w-full pl-8 pr-3 py-2.5 rounded glass-input text-xs"
                         value={licensePlate}
                         onChange={(e) => setLicensePlate(e.target.value)}
                         placeholder="e.g. CA 98765"
@@ -185,13 +184,13 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
                 </div>
 
                 <div>
-                  <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Riding Proficiency Badge</label>
+                  <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Riding Proficiency Badge</label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">
-                      <Award size={16} />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500">
+                      <Award size={14} />
                     </div>
                     <select
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl glass-input text-xs"
+                      className="w-full pl-8 pr-3 py-2.5 rounded glass-input text-xs appearance-none font-medium"
                       value={experienceLevel}
                       onChange={(e) => setExperienceLevel(e.target.value)}
                     >
@@ -205,9 +204,9 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
                 <button
                   type="submit"
                   disabled={isUpdatingProfile}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white font-extrabold text-xs tracking-wider uppercase transition-all shadow-lg hover:shadow-cyan-500/10"
+                  className="w-full py-2.5 px-4 rounded bg-brandOrange hover:bg-[#e25700] text-white font-extrabold text-xs tracking-wider uppercase transition-all shadow-md"
                 >
-                  {isUpdatingProfile ? 'Saving updates...' : 'Save Settings'}
+                  {isUpdatingProfile ? 'Syncing updates...' : 'Save Settings'}
                 </button>
               </form>
             </div>
@@ -215,74 +214,74 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
         </main>
       </div>
 
-      {/* 3. Create Trip Pop-Up Modal */}
+      {/* Create Trip Pop-Up Modal - Strava style */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="w-full max-w-lg bg-darkCard border border-white/10 rounded-2xl p-6 relative shadow-2xl">
-            <h3 className="text-lg font-black text-white uppercase tracking-wider mb-2">Configure Road Trip</h3>
-            <p className="text-gray-400 text-xs mb-6">Set up your start/end points, checkpoints, and route.</p>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/85 p-4 animate-fade-in">
+          <div className="w-full max-w-sm bg-darkCard border border-[#242424] rounded-lg p-5 relative shadow-2xl">
+            <h3 className="text-base font-black text-white uppercase tracking-wider mb-1">Create Road Trip</h3>
+            <p className="text-neutral-400 text-xs mb-4 font-medium">Set up your start/end points, checkpoints, and route.</p>
 
             <form onSubmit={handleCreateTripSubmit} className="space-y-4">
               <div>
-                <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Trip Name *</label>
+                <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Trip Name *</label>
                 <input
                   type="text"
                   required
                   value={tripName}
                   onChange={(e) => setTripName(e.target.value)}
                   placeholder="e.g. Marin Scenic Weekend Run"
-                  className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
+                  className="w-full px-3 py-2 rounded glass-input text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Short Description</label>
+                <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Description</label>
                 <textarea
                   value={tripDesc}
                   onChange={(e) => setTripDesc(e.target.value)}
                   placeholder="Details about meeting spots, gear, speeds..."
-                  className="w-full px-4 py-2.5 rounded-xl glass-input text-xs h-20"
+                  className="w-full px-3 py-2 rounded glass-input text-xs h-16 resize-none"
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">Start Landmark</label>
+                  <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">Start Landmark</label>
                   <input
                     type="text"
                     value={startPoint}
                     onChange={(e) => setStartPoint(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
+                    className="w-full px-3 py-2 rounded glass-input text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-gray-300 text-[10px] font-bold uppercase tracking-wider mb-2">End Destination</label>
+                  <label className="block text-neutral-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">End Destination</label>
                   <input
                     type="text"
                     value={endPoint}
                     onChange={(e) => setEndPoint(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
+                    className="w-full px-3 py-2 rounded glass-input text-xs"
                   />
                 </div>
               </div>
 
-              <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-[10px] text-gray-400 leading-relaxed">
-                📢 <span className="text-brandCyan font-bold">Smart Defaults Installed</span>: Creating this trip will pre-configure 4 coastal scenic checkpoints and route polyline arrays so you can immediately experience real-time tracking, separation warners, and progress dashboard metrics.
+              <div className="p-3 bg-[#1c1c1e] rounded border border-[#2c2c2e] text-[9px] text-neutral-400 leading-relaxed font-semibold">
+                📢 <span className="text-brandOrange">Preset Active Defaults</span>: Creating this trip will pre-configure 4 coastal scenic checkpoints and route polyline coordinates so you can immediately experience live tracking and ETAs.
               </div>
 
               <div className="flex gap-3 mt-6">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="w-1/2 py-2.5 px-4 rounded-xl border border-white/10 text-gray-400 hover:text-white font-bold text-xs tracking-wider transition-all"
+                  className="w-1/2 py-2 px-3 rounded border border-[#242424] text-neutral-400 hover:text-white font-bold text-xs tracking-wider transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isCreatingTrip || !tripName}
-                  className="w-1/2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-extrabold text-xs tracking-wider uppercase transition-all shadow-lg hover:shadow-violet-600/20"
+                  className="w-1/2 py-2 px-3 rounded bg-brandOrange hover:bg-[#e25700] text-white font-extrabold text-xs tracking-wider uppercase transition-all shadow-md"
                 >
                   {isCreatingTrip ? 'Configuring...' : 'Launch Trip'}
                 </button>
@@ -292,19 +291,19 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
         </div>
       )}
 
-      {/* 4. Active Float Toast Notifications Panel */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+      {/* Toast notifications */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none max-w-sm w-full font-sans">
         {notifications.map((n) => (
           <div
             key={n.id}
-            className={`p-3.5 rounded-xl border shadow-xl flex items-center gap-3 text-xs font-bold font-sans fade-in text-white ${
+            className={`p-3 rounded border shadow-xl flex items-center gap-3 text-xs font-bold text-white ${
               n.type === 'success'
                 ? 'bg-emerald-950/90 border-emerald-500/20'
                 : n.type === 'error'
                 ? 'bg-red-950/90 border-red-500/20 animate-pulse'
                 : n.type === 'warning'
                 ? 'bg-amber-950/90 border-amber-500/20'
-                : 'bg-slate-900/90 border-white/10'
+                : 'bg-neutral-900/95 border-[#242424]'
             }`}
           >
             <span>{n.text}</span>

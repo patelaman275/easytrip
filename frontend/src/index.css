@@ -5,98 +5,96 @@
 /* Leaflet map styles */
 @import "leaflet/dist/leaflet.css";
 
-/* Base Body Styles */
+/* Base Body Styles - Strava Premium Athletic theme */
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: #0b0f19;
-  color: #f3f4f6;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #0d0d0d; /* Pure deep athletic black */
+  color: #ffffff; /* High contrast pure white */
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbars */
+/* Custom Scrollbars - Flat Slate style */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #121212;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
+  background: #2b2b2b;
+  border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #3a3a3c;
 }
 
-/* Glassmorphism Presets */
+/* Strava Premium High-Contrast Panel styling */
 .glass-panel {
-  background: rgba(17, 24, 39, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #121212; /* Solid high-contrast charcoal black */
+  border: 1px solid #242424; /* Razor sharp dark grid line */
 }
 
 .glass-panel-light {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #1c1c1e;
+  border: 1px solid #2c2c2e;
 }
 
 .glass-input {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #f3f4f6;
-  transition: all 0.3s ease;
+  background: #1c1c1e;
+  border: 1px solid #2c2c2e;
+  color: #ffffff;
+  border-radius: 6px;
+  transition: all 0.2s ease;
 }
 
 .glass-input:focus {
-  border-color: #06b6d4;
+  border-color: #fc6100; /* Strava signature athletic orange */
   outline: none;
-  box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+  box-shadow: 0 0 0 2px rgba(252, 97, 0, 0.15);
 }
 
-/* Custom Leaflet Map styling to support modern Dark Mode visual design */
+/* Custom Leaflet Map styling to support modern high-contrast design */
 .leaflet-container {
-  background: #0d111d !important;
+  background: #000000 !important;
 }
 
 .dark-map-tiles {
-  filter: invert(100%) sub(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+  filter: invert(100%) sub(100%) hue-rotate(180deg) brightness(85%) contrast(90%);
 }
 
 .leaflet-bar a {
-  background-color: rgba(17, 24, 39, 0.8) !important;
-  color: #f3f4f6 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: #121212 !important;
+  color: #ffffff !important;
+  border: 1px solid #242424 !important;
 }
 
 .leaflet-bar a:hover {
-  background-color: rgba(31, 41, 55, 0.9) !important;
+  background-color: #1c1c1e !important;
 }
 
 .leaflet-popup-content-wrapper {
-  background: rgba(17, 24, 39, 0.9) !important;
-  color: #f3f4f6 !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  backdrop-filter: blur(8px) !important;
-  border-radius: 8px !important;
+  background: #121212 !important;
+  color: #ffffff !important;
+  border: 1px solid #242424 !important;
+  border-radius: 6px !important;
 }
 
 .leaflet-popup-tip {
-  background: rgba(17, 24, 39, 0.9) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background: #121212 !important;
+  border: 1px solid #242424 !important;
 }
 
 /* Animations */
-@keyframes pulse-cyan {
+@keyframes pulse-orange {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7);
+    box-shadow: 0 0 0 0 rgba(252, 97, 0, 0.7);
   }
   50% {
-    box-shadow: 0 0 0 10px rgba(6, 182, 212, 0);
+    box-shadow: 0 0 0 8px rgba(252, 97, 0, 0);
   }
 }
 
@@ -105,12 +103,12 @@ body {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
   }
   50% {
-    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
   }
 }
 
-.animate-pulse-cyan {
-  animation: pulse-cyan 2s infinite;
+.animate-pulse-orange {
+  animation: pulse-orange 2s infinite;
 }
 
 .animate-pulse-red {
@@ -118,13 +116,13 @@ body {
 }
 
 .fade-in {
-  animation: fadeIn 0.4s ease-out forwards;
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -139,47 +137,15 @@ body {
 }
 
 .marker-pin {
-  width: 32px;
-  height: 32px;
-  border-radius: 50% 50% 50% 0;
-  background: #06b6d4;
-  position: absolute;
-  transform: rotate(-45deg);
-  left: 50%;
-  top: 50%;
-  margin: -16px 0 0 -16px;
-  box-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
-  border: 2px solid white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fc6100; /* Strava athletic orange */
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 6px rgba(252, 97, 0, 0.5);
 }
 
 .marker-pin-sos {
   background: #ef4444;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
-}
-
-.marker-pin::after {
-  content: '';
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #0b0f19;
-  position: absolute;
-  top: 9px;
-  left: 9px;
-}
-
-.marker-label {
-  background: rgba(17, 24, 39, 0.8);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  font-size: 11px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  backdrop-filter: blur(4px);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
 }
