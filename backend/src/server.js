@@ -194,6 +194,29 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 6.5. Send Chat Message
+  socket.on('sendMessage', ({ rideCode, nickname, message }) => {
+    try {
+      const code = rideCode.toUpperCase();
+      const ride = rides[code];
+
+      if (ride && ride.riders[socket.id]) {
+        const chatMsg = {
+          _id: 'msg_' + Math.random().toString(36).substring(2, 9) + Date.now(),
+          nickname,
+          message,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          color: ride.riders[socket.id].color || '#fc6100',
+        };
+
+        // Broadcast to everyone in the room
+        io.to(code).emit('receiveMessage', chatMsg);
+      }
+    } catch (err) {
+      console.error('Failed to broadcast chat message:', err.message);
+    }
+  });
+
   // 7. Handle Disconnections & Cleanup
   socket.on('disconnect', () => {
     const code = getRideCodeBySocketId(socket.id);

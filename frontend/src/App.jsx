@@ -1,15 +1,34 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { Compass, Users, MapPin, Plus, Share2, LogOut, ShieldAlert, Award, Play, Square, Navigation, CheckCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Compass, Users, MapPin, Plus, Share2, LogOut, ShieldAlert, Award, 
+  Play, Square, Navigation, CheckCircle, MessageSquare, Bell, CloudSun,
+  Activity, Zap, Trash2, ArrowRight, ClipboardCopy
+} from 'lucide-react';
 
 // Connect to local Node server or Render backend dynamically
 const SOCKET_URL = import.meta.env.MODE === 'production'
   ? 'https://easytrip-fj1o.onrender.com'
   : 'http://localhost:5000';
 
-// Custom Map Centering Controller
+// Haversine geodesic distance calculator in km
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; 
+  return d;
+};
+
+// Dynamic Map View Control Centering
 const MapController = ({ center }) => {
   const map = useMap();
   useEffect(() => {
@@ -20,7 +39,7 @@ const MapController = ({ center }) => {
   return null;
 };
 
-// Map Click Listener for interactive Route planning & Checkpoints
+// Click listener to set Destination and drop Checkpoints dynamically
 const MapClickHandler = ({ onClick }) => {
   useMapEvents({
     click: (e) => {
@@ -31,7 +50,7 @@ const MapClickHandler = ({ onClick }) => {
 };
 
 function App() {
-  // App States
+  // Authentication & Entrance
   const [nickname, setNickname] = useState(() => sessionStorage.getItem('easytrip_nickname') || '');
   const [tempNickname, setTempNickname] = useState('');
   const [isJoined, setIsJoined] = useState(false);
@@ -39,35 +58,62 @@ function App() {
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // GPS Locations States
+  // GPS Coordinates & Map Tracking
   const [currentPosition, setCurrentPosition] = useState({ lat: 12.8230, lng: 80.0440 });
+  const [startPoint, setStartPoint] = useState(null);
   const [autoCenter, setAutoCenter] = useState(true);
   const [activeSOS, setActiveSOS] = useState(null);
 
-  // Live Ride States (Synced across users via Socket)
+  // Synced Room States
   const [riders, setRiders] = useState([]);
   const [destination, setDestination] = useState(null);
   const [checkpoints, setCheckpoints] = useState([]);
   const [route, setRoute] = useState([]);
   const [isCreator, setIsCreator] = useState(false);
+  const [checkpointMode, setCheckpointMode] = useState(false);
 
-  // Mock Telemetry States
+  // Group Chat & System Logs (Right Panel)
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [systemLogs, setSystemLogs] = useState([]);
+  const [activeRightTab, setActiveRightTab] = useState('chat'); // 'chat' or 'logs'
+
+  // Dynamic Telemetry Metrics
   const [speed, setSpeed] = useState(0);
   const [battery, setBattery] = useState(100);
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simIndex, setSimIndex] = useState(0);
 
   // Socket & Refs
   const socketRef = useRef(null);
-  const simIntervalRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const pendingJoinCodeRef = useRef(new URLSearchParams(window.location.search).get('join'));
 
-  // 1. Initialize Socket.io Connection
+  // Scroll to bottom of chat
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // 1. Setup Sockets listeners
   useEffect(() => {
     socketRef.current = io(SOCKET_URL);
 
-    // Listeners
     socketRef.current.on('connect', () => {
-      console.log('Connected to socket server:', socketRef.current.id);
+      console.log('Connected to server socket:', socketRef.current.id);
+      
+      // Auto-join from invite share URL
+      const savedNickname = sessionStorage.getItem('easytrip_nickname');
+      if (savedNickname && pendingJoinCodeRef.current) {
+        socketRef.current.emit('joinRide', {
+          rideCode: pendingJoinCodeRef.current.toUpperCase(),
+          nickname: savedNickname,
+          currentLocation: currentPosition,
+        });
+        pendingJoinCodeRef.current = null;
+        window.history.replaceState({}, '', window.location.pathname);
+      }
     });
 
     socketRef.current.on('rideCreated', (ride) => {
@@ -76,9 +122,11 @@ function App() {
       setDestination(ride.destination);
       setCheckpoints(ride.checkpoints);
       setRoute(ride.route);
+      setStartPoint(currentPosition);
       setIsCreator(true);
       setIsJoined(true);
       setErrorMsg('');
+      addSystemLog('Ride room created. Set your destination on the map.');
     });
 
     socketRef.current.on('rideJoined', (ride) => {
@@ -87,13 +135,18 @@ function App() {
       setDestination(ride.destination);
       setCheckpoints(ride.checkpoints);
       setRoute(ride.route);
+      // Boot start point based on first participant's creation marker
+      const creatorRider = Object.values(ride.riders).find(r => r.socketId === ride.creatorId);
+      setStartPoint(creatorRider ? { lat: creatorRider.lat, lng: creatorRider.lng } : currentPosition);
       setIsCreator(false);
       setIsJoined(true);
       setErrorMsg('');
+      addSystemLog(`Joined room: ${ride.code}`);
     });
 
     socketRef.current.on('riderJoined', ({ nickname, riders }) => {
       setRiders(riders);
+      addSystemLog(`${nickname} joined the ride.`);
       triggerNotification(`${nickname} joined the ride!`);
     });
 
@@ -103,25 +156,34 @@ function App() {
 
     socketRef.current.on('checkpointAdded', (updatedCheckpoints) => {
       setCheckpoints(updatedCheckpoints);
+      addSystemLog(`Leader dropped Checkpoint ${updatedCheckpoints.length}.`);
       triggerNotification('🏁 Checkpoint added by the Group Leader!');
     });
 
     socketRef.current.on('routeSynced', ({ destination, route }) => {
       setDestination(destination);
       setRoute(route);
+      addSystemLog('Leader synchronized destination path.');
       triggerNotification('🗺️ Route updated by the Group Leader!');
     });
 
     socketRef.current.on('sosAlert', ({ nickname, isSOS, lat, lng }) => {
       if (isSOS) {
         setActiveSOS({ nickname, lat, lng });
+        addSystemLog(`🚨 EMERGENCY: SOS triggered by ${nickname}!`);
       } else {
         setActiveSOS(null);
+        addSystemLog(`✅ SOS resolved by ${nickname}.`);
       }
+    });
+
+    socketRef.current.on('receiveMessage', (msg) => {
+      setMessages((prev) => [...prev, msg]);
     });
 
     socketRef.current.on('riderLeft', ({ nickname, riders }) => {
       setRiders(riders);
+      addSystemLog(`${nickname} disconnected.`);
       triggerNotification(`${nickname} disconnected.`);
     });
 
@@ -131,38 +193,34 @@ function App() {
 
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
-      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
     };
   }, []);
 
-  // 2. Continuous Location Watcher
+  // 2. Geolocation Watch Position
   useEffect(() => {
     if (!nickname) return;
 
     let watchId = null;
     if (navigator.geolocation) {
-      // Get current position once to bootstrap coordinates
+      // Fetch baseline position instantly
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setCurrentPosition(coords);
         },
-        (err) => console.warn('Initial GPS query deferred:', err.message)
+        (err) => console.warn('GPS bootstrapping deferred:', err.message)
       );
 
-      // Start continuous watching
+      // Start watcher
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          if (isSimulating) return; // Ignore actual coordinates if simulator is driving
           const { latitude, longitude, speed: gpsSpeed } = pos.coords;
           const coords = { lat: latitude, lng: longitude };
           setCurrentPosition(coords);
 
-          // Convert speed to km/h
           const speedKmH = gpsSpeed ? Math.round(gpsSpeed * 3.6) : 0;
           setSpeed(speedKmH);
 
-          // Stream coordinates to group room
           if (isJoined && rideCode) {
             socketRef.current.emit('sendLocation', {
               rideCode,
@@ -171,7 +229,7 @@ function App() {
             });
           }
         },
-        (err) => console.warn('GPS tracking error:', err.message),
+        (err) => console.warn('Continuous GPS tracking error:', err.message),
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
     }
@@ -179,15 +237,26 @@ function App() {
     return () => {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     };
-  }, [nickname, isJoined, rideCode, isSimulating]);
+  }, [nickname, isJoined, rideCode]);
 
-  // 3. User Actions
+  // 3. System actions
   const handleEnterNickname = (e) => {
     e.preventDefault();
     if (!tempNickname.trim()) return;
 
-    sessionStorage.setItem('easytrip_nickname', tempNickname.trim());
-    setNickname(tempNickname.trim());
+    const trimmed = tempNickname.trim();
+    sessionStorage.setItem('easytrip_nickname', trimmed);
+    setNickname(trimmed);
+
+    if (pendingJoinCodeRef.current && socketRef.current) {
+      socketRef.current.emit('joinRide', {
+        rideCode: pendingJoinCodeRef.current.toUpperCase(),
+        nickname: trimmed,
+        currentLocation: currentPosition,
+      });
+      pendingJoinCodeRef.current = null;
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   };
 
   const handleCreateRide = () => {
@@ -212,7 +281,7 @@ function App() {
   const handleLeaveRide = () => {
     if (socketRef.current) {
       socketRef.current.disconnect();
-      socketRef.current.connect(); // Reconnect fresh
+      socketRef.current.connect();
     }
     setIsJoined(false);
     setRideCode('');
@@ -222,6 +291,8 @@ function App() {
     setIsCreator(false);
     setRiders([]);
     setActiveSOS(null);
+    setMessages([]);
+    setSystemLogs([]);
     stopSimulation();
   };
 
@@ -229,7 +300,7 @@ function App() {
     if (!isJoined || !isCreator || !rideCode) return;
 
     if (!destination) {
-      // 1. Destination not set -> Set Destination and construct route polyline
+      // 1. Select destination finish point
       const destCoords = { lat: latlng.lat, lng: latlng.lng };
       const routePath = [
         [currentPosition.lat, currentPosition.lng],
@@ -243,8 +314,8 @@ function App() {
         destination: destCoords,
         route: routePath,
       });
-    } else {
-      // 2. Destination set -> Add Checkpoints
+    } else if (checkpointMode) {
+      // 2. Select checkpoint markers
       const cpIndex = checkpoints.length + 1;
       const newCheckpoint = {
         name: `CP-${cpIndex}`,
@@ -260,106 +331,111 @@ function App() {
     }
   };
 
-  // SOS button trigger
+  const handleClearRoute = () => {
+    if (!isCreator || !rideCode) return;
+    setDestination(null);
+    setRoute([]);
+    setCheckpoints([]);
+
+    socketRef.current.emit('updateRoute', {
+      rideCode,
+      destination: null,
+      route: [],
+    });
+  };
+
+  const handleSendChat = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !isJoined || !rideCode) return;
+
+    socketRef.current.emit('sendMessage', {
+      rideCode,
+      nickname,
+      message: chatInput.trim(),
+    });
+    setChatInput('');
+  };
+
   const handleToggleSOS = () => {
     if (!isJoined || !rideCode) return;
-    const isCurrentlySOS = riders.find(r => r.socketId === socketRef.current.id)?.isSOS || false;
-    const nextSOSState = !isCurrentlySOS;
+    const myRiderInfo = riders.find(r => r.socketId === socketRef.current.id);
+    const currentlySOS = myRiderInfo ? myRiderInfo.isSOS : false;
+    const nextSOS = !currentlySOS;
 
     socketRef.current.emit('sosAlert', {
       rideCode,
       nickname,
-      isSOS: nextSOSState,
+      isSOS: nextSOS,
     });
   };
 
-  // 4. Scenic GPS Route Simulator for Indoor Verification
-  const startSimulation = () => {
-    if (isSimulating || !isJoined || !rideCode) return;
-
-    setIsSimulating(true);
-    triggerNotification('Starting scenic GPS simulator path...');
-
-    // Generate mock route coordinates from start to destination
-    const startPoint = currentPosition;
-    const endPoint = destination || { lat: startPoint.lat + 0.05, lng: startPoint.lng + 0.05 };
-
-    const steps = 15;
-    const mockCoordinates = [];
-    for (let i = 0; i <= steps; i++) {
-      const fraction = i / steps;
-      mockCoordinates.push({
-        lat: startPoint.lat + (endPoint.lat - startPoint.lat) * fraction,
-        lng: startPoint.lng + (endPoint.lng - startPoint.lng) * fraction,
-      });
-    }
-
-    let idx = 0;
-    const interval = setInterval(() => {
-      if (idx >= mockCoordinates.length) {
-        clearInterval(interval);
-        setIsSimulating(false);
-        setSpeed(0);
-        triggerNotification('Simulation route completed!');
-        return;
-      }
-
-      const coords = mockCoordinates[idx];
-      setCurrentPosition(coords);
-      setSpeed(Math.round(45 + Math.random() * 15));
-      setBattery(prev => Math.max(15, prev - 2));
-
-      socketRef.current.emit('sendLocation', {
-        rideCode,
-        lat: coords.lat,
-        lng: coords.lng,
-      });
-
-      idx++;
-      setSimIndex(idx);
-    }, 3000);
-
-    simIntervalRef.current = interval;
+  const addSystemLog = (text) => {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setSystemLogs((prev) => [{ text, time }, ...prev]);
   };
 
-  const stopSimulation = () => {
-    if (simIntervalRef.current) {
-      clearInterval(simIntervalRef.current);
-      setIsSimulating(false);
-      setSpeed(0);
-      triggerNotification('Simulator stopped.');
-    }
-  };
-
-  // Notifications Toast Trigger
+  // Toast helper
   const [toast, setToast] = useState('');
   const triggerNotification = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 4000);
   };
 
-  // Custom marker generators
-  const getRiderIcon = (color, isMe = false, isSOS = false) => {
+  // Telemetry metric selectors
+  const metrics = useMemo(() => {
+    if (!destination) {
+      return { distanceLeft: '0.0 km', progress: 0, eta: '--:--' };
+    }
+
+    // Geodesic total and remaining distances in km
+    const totalDist = startPoint 
+      ? calculateDistance(startPoint.lat, startPoint.lng, destination.lat, destination.lng) 
+      : 10;
+    const remainingDist = calculateDistance(currentPosition.lat, currentPosition.lng, destination.lat, destination.lng);
+
+    const progressPercent = Math.min(100, Math.max(0, Math.round(((totalDist - remainingDist) / totalDist) * 100)));
+    
+    // ETA Calculation based on speed or default
+    let etaStr = '--:--';
+    if (speed > 0) {
+      const timeHours = remainingDist / speed;
+      const minsTotal = Math.round(timeHours * 60);
+      const hours = Math.floor(minsTotal / 60);
+      const mins = minsTotal % 60;
+      etaStr = `${hours > 0 ? `${hours}h ` : ''}${mins}m`;
+    } else {
+      etaStr = 'Resting';
+    }
+
+    return {
+      distanceLeft: `${remainingDist.toFixed(1)} km`,
+      progress: progressPercent,
+      eta: etaStr,
+    };
+  }, [destination, currentPosition, speed, startPoint]);
+
+  // Leaflet Marker Icons
+  const createRiderIcon = (color, isMe = false, isSOS = false) => {
     return L.divIcon({
-      className: 'custom-rider-icon',
+      className: 'rider-custom-marker',
       html: `
         <div class="relative flex flex-col items-center">
-          <div class="w-7 h-7 rounded-full border-2 ${isMe ? 'border-white' : 'border-neutral-800'} flex items-center justify-center shadow-lg relative" style="background-color: ${color}">
-            <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
-            ${isSOS ? `<div class="absolute inset-0 rounded-full border-2 border-red-500 animate-ping"></div>` : ''}
+          <div class="w-8 h-8 rounded-full border-2 ${isMe ? 'border-white animate-pulse-orange' : 'border-neutral-800'} flex items-center justify-center shadow-lg relative" style="background-color: ${color}">
+            <div class="w-2 h-2 rounded-full bg-white"></div>
+            ${isSOS ? `<div class="absolute inset-0 rounded-full border-4 border-red-500 animate-ping"></div>` : ''}
           </div>
         </div>
       `,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
     });
   };
 
-  const getCheckpointIcon = (order) => {
+  const createCheckpointIcon = (order) => {
     return L.divIcon({
-      className: 'custom-cp-icon',
+      className: 'checkpoint-custom-marker',
       html: `
-        <div class="w-6 h-6 rounded bg-[#121212] border-2 border-[#fc6100] flex items-center justify-center font-black text-[10px] text-[#fc6100] rotate-45 shadow-md">
+        <div class="w-6 h-6 rounded bg-[#0d0d0d] border-2 border-brandOrange flex items-center justify-center font-black text-[10px] text-brandOrange rotate-45 shadow-lg">
           <span class="-rotate-45">${order}</span>
         </div>
       `,
@@ -368,26 +444,31 @@ function App() {
     });
   };
 
-  const getFinishIcon = () => {
+  const createFinishIcon = () => {
     return L.divIcon({
-      className: 'custom-finish-icon',
+      className: 'finish-custom-marker',
       html: `
-        <div class="w-7 h-7 rounded bg-[#fc6100] border border-white flex items-center justify-center font-black text-white text-[12px] shadow-lg animate-bounce">
-          🏁
+        <div class="w-8 h-8 rounded bg-brandOrange border border-white flex items-center justify-center shadow-2xl animate-bounce">
+          <span class="text-sm">🏁</span>
         </div>
       `,
-      iconSize: [28, 28],
-      iconAnchor: [14, 28],
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
     });
   };
 
-  // Clean UI Nickname overlay if not set
+  // Entrance Overlay if username is not configured
   if (!nickname) {
     return (
       <div className="min-h-screen bg-darkBg flex flex-col items-center justify-center p-4 font-sans select-none relative">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(252,97,0,0.12),transparent_70%)] pointer-events-none"></div>
 
-        <div className="w-full max-w-sm p-6 rounded-lg glass-panel shadow-2xl relative z-10 flex flex-col items-center">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-sm p-6 rounded-lg glass-panel shadow-2xl relative z-10 flex flex-col items-center border border-[#242424]"
+        >
           <div className="w-10 h-10 rounded bg-brandOrange flex items-center justify-center text-white font-black text-xl mb-4 shadow-lg animate-pulse-orange">
             🧭
           </div>
@@ -395,19 +476,19 @@ function App() {
             EASY<span className="text-brandOrange">TRIP</span>
           </h1>
           <p className="text-neutral-400 text-xs mt-1 text-center font-semibold uppercase tracking-wider mb-6">
-            Real-Time Group Coordination Map
+            Real-Time Cyberpunk Biker Radar
           </p>
 
           <form onSubmit={handleEnterNickname} className="w-full space-y-4">
             <div>
               <label className="block text-neutral-400 text-[10px] font-black uppercase tracking-widest mb-1.5 text-center">
-                CHOOSE RIDER NICKNAME
+                CHOOSE RIDER CALLSIGN
               </label>
               <input
                 type="text"
                 value={tempNickname}
                 onChange={(e) => setTempNickname(e.target.value)}
-                placeholder="e.g. AMAN"
+                placeholder="e.g. MAVERICK"
                 required
                 maxLength={10}
                 className="w-full py-2.5 px-3 rounded glass-input text-xs text-center font-bold tracking-widest uppercase"
@@ -419,193 +500,512 @@ function App() {
               disabled={!tempNickname.trim()}
               className="w-full py-2.5 bg-brandOrange hover:bg-[#e25700] text-white font-extrabold text-xs tracking-widest uppercase transition-all shadow-md rounded"
             >
-              Enter Dashboard
+              Initialize Cockpit
             </button>
           </form>
-        </div>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden relative font-sans select-none bg-black">
-      {/* 1. Full-Screen Modern Dark Map */}
-      <div className="h-full w-full relative z-10">
-        <MapContainer
-          center={[currentPosition.lat, currentPosition.lng]}
-          zoom={14}
-          zoomControl={false}
-          style={{ width: '100%', height: '100%' }}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          />
-
-          <MapController center={autoCenter ? [currentPosition.lat, currentPosition.lng] : null} />
-          <MapClickHandler onClick={handleMapClick} />
-
-          {/* Polyline Route */}
-          {route.length > 0 && (
-            <Polyline
-              positions={route}
-              color="#fc6100"
-              weight={4}
-              opacity={0.8}
-            />
-          )}
-
-          {/* Checkpoints Markers */}
-          {checkpoints.map((cp, idx) => (
-            <Marker
-              key={idx}
-              position={[cp.lat, cp.lng]}
-              icon={getCheckpointIcon(cp.order)}
-            >
-              <Popup>
-                <div className="text-xs p-1 font-sans">
-                  <h4 className="font-extrabold text-[#fc6100] uppercase text-[10px]">Checkpoint {cp.order}</h4>
-                  <p className="text-white mt-0.5 font-bold uppercase text-[9px]">{cp.name}</p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-
-          {/* Destination Finish Marker */}
-          {destination && (
-            <Marker
-              position={[destination.lat, destination.lng]}
-              icon={getFinishIcon()}
-            >
-              <Popup>
-                <div className="text-xs p-1 font-sans text-center">
-                  <span className="font-black text-white text-[10px] uppercase">🏁 DESTINATION ENDPOINT</span>
-                </div>
-              </Popup>
-            </Marker>
-          )}
-
-          {/* Live Riders Markers */}
-          {riders.map((loc) => {
-            const isMe = loc.socketId === socketRef.current?.id;
-            return (
-              <Marker
-                key={loc.socketId}
-                position={[loc.lat, loc.lng]}
-                icon={getRiderIcon(loc.color, isMe, loc.isSOS)}
-              >
-                <Popup>
-                  <div className="text-xs p-2 min-w-[120px] font-sans">
-                    <div className="flex items-center justify-between border-b border-[#242424] pb-1.5 mb-1.5 select-none">
-                      <span className="font-black text-white text-xs uppercase tracking-wider">{loc.nickname}</span>
-                      {isMe && <span className="text-[8px] bg-brandOrange/20 text-brandOrange px-1 rounded uppercase font-black">Me</span>}
-                    </div>
-                    <div className="space-y-1 font-black text-neutral-400 uppercase text-[9px]">
-                      <p>Speed: <span className="text-white">{isMe ? speed : loc.speed || 0} km/h</span></p>
-                      <p>Emergency: <span className={loc.isSOS ? 'text-red-500' : 'text-emerald-500'}>{loc.isSOS ? 'ACTIVE' : 'NONE'}</span></p>
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
-        </MapContainer>
-      </div>
-
-      {/* 2. Top-Left Floating Logo Card */}
-      <div className="absolute top-4 left-4 z-20 glass-panel p-3.5 rounded-lg flex flex-col shadow-2xl">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-brandOrange flex items-center justify-center text-white font-black text-xs">
+    <div className="h-screen w-screen bg-[#060608] overflow-hidden flex font-sans text-white select-none relative">
+      
+      {/* LEFT SIDEBAR PANEL */}
+      <motion.aside 
+        initial={{ x: -100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ duration: 0.3 }}
+        className="w-80 h-full bg-[#0b0c10]/95 border-r border-[#1a1c23] flex flex-col p-5 z-20 shrink-0 select-none shadow-2xl"
+      >
+        {/* App Title Logo */}
+        <div className="flex items-center gap-3 mb-6 select-none shrink-0">
+          <div className="w-7 h-7 rounded bg-brandOrange flex items-center justify-center text-white font-black text-sm shadow-md shadow-brandOrange/15">
             🧭
           </div>
-          <span className="text-sm font-black tracking-tight text-white select-none">
+          <span className="text-md font-black tracking-wider uppercase text-white">
             EASY<span className="text-brandOrange">TRIP</span>
           </span>
         </div>
-        {isJoined && (
-          <div className="mt-2.5 pt-2 border-t border-[#242424] flex flex-col gap-0.5">
-            <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider">ACTIVE GROUP CODE</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-black text-white tracking-widest uppercase select-all">{rideCode}</span>
+
+        {/* Action button creation decks */}
+        {!isJoined ? (
+          <div className="flex flex-col gap-4 shrink-0">
+            <button
+              onClick={handleCreateRide}
+              className="w-full py-3 px-4 bg-brandOrange hover:bg-[#e25700] text-white font-black text-xs tracking-widest uppercase rounded-lg shadow-lg shadow-brandOrange/10 transition-all flex items-center justify-center gap-2"
+            >
+              <Plus size={14} /> Create Ride Session
+            </button>
+
+            <form onSubmit={handleJoinRide} className="space-y-2 pt-2 border-t border-[#1a1c23]">
+              <span className="block text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Join Existing Run</span>
+              <input
+                type="text"
+                value={joinCodeInput}
+                onChange={(e) => setJoinCodeInput(e.target.value)}
+                placeholder="RIDE CODE"
+                required
+                className="w-full py-2 px-3 rounded-lg glass-input text-xs font-black uppercase text-center tracking-widest border border-[#1a1c23]"
+              />
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(rideCode);
-                  triggerNotification('Invite code copied to clipboard!');
-                }}
-                className="p-1 hover:bg-[#1c1c1e] text-neutral-400 hover:text-brandOrange rounded border border-[#2c2c2e] transition-all"
-                title="Copy Invite Code"
+                type="submit"
+                disabled={!joinCodeInput.trim()}
+                className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-45 text-white font-black text-xs tracking-widest uppercase rounded-lg transition-all"
               >
-                <Share2 size={10} />
+                Join Ride Room
               </button>
+            </form>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3.5 shrink-0 select-none">
+            <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider">ACTIVE TRIP CARD</span>
+            <div className="glass-panel p-3 rounded-lg border border-[#1a1c23] flex flex-col gap-2 relative">
+              <span className="text-[9px] text-neutral-400 font-bold uppercase">Room Code</span>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-black text-brandOrange tracking-widest select-all">{rideCode}</span>
+                <button
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}?join=${rideCode}`;
+                    navigator.clipboard.writeText(shareUrl);
+                    triggerNotification('Share Link copied to clipboard!');
+                  }}
+                  className="p-1.5 hover:bg-[#1a1c23] text-neutral-400 hover:text-brandOrange border border-[#1a1c23] rounded transition-all flex items-center justify-center"
+                  title="Copy Direct Share URL"
+                >
+                  <Share2 size={12} />
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={handleLeaveRide}
+              className="w-full py-2.5 bg-brandCrimson/10 hover:bg-brandCrimson/20 border border-brandCrimson/25 text-brandCrimson font-extrabold text-[10px] tracking-widest uppercase rounded-lg transition-all flex items-center justify-center gap-1.5"
+            >
+              Leave Ride Session
+            </button>
+          </div>
+        )}
+
+        {/* Dynamic active riders list */}
+        {isJoined && (
+          <div className="grow overflow-y-auto mt-6 flex flex-col gap-3">
+            <div className="flex items-center justify-between shrink-0">
+              <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                <Users size={12} /> Active Riders ({riders.length})
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-brandOrange animate-pulse shrink-0"></span>
+            </div>
+
+            <div className="space-y-2 pr-1">
+              <AnimatePresence>
+                {riders.map((r) => {
+                  const isMe = r.socketId === socketRef.current?.id;
+                  return (
+                    <motion.div
+                      key={r.socketId}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="p-2.5 rounded-lg border border-[#1a1c23] bg-[#0c0d12] flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-inner" style={{ backgroundColor: r.color }}></span>
+                        <span className="text-white font-extrabold text-xs truncate uppercase tracking-wide">{r.nickname}</span>
+                        {isMe && <span className="text-[8px] text-neutral-500 font-black shrink-0">(ME)</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 select-none">
+                        {r.isSOS && (
+                          <span className="text-[8px] bg-red-950/80 border border-red-500/20 text-red-500 font-black px-1.5 py-0.5 rounded animate-pulse">
+                            SOS
+                          </span>
+                        )}
+                        <span className="text-[10px] text-neutral-400 font-bold">{isMe ? speed : r.speed || 0} km/h</span>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           </div>
         )}
+
+        {/* Callsign profile indicator */}
+        <div className="mt-auto pt-4 border-t border-[#1a1c23] flex items-center gap-3 shrink-0">
+          <div className="w-8 h-8 rounded-full bg-brandOrange flex items-center justify-center font-black text-white uppercase text-xs">
+            {nickname.substring(0, 2)}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-black text-white uppercase tracking-wider">{nickname}</span>
+            <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-widest">Active Pilot</span>
+          </div>
+        </div>
+      </motion.aside>
+
+      {/* CENTER INTERACTIVE WORKSPACE */}
+      <div className="grow flex flex-col h-full overflow-hidden relative z-10">
+        
+        {/* TOP METRICS TELEMETRY GRID */}
+        <motion.div 
+          initial={{ y: -50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.3 }}
+          className="h-20 border-b border-[#1a1c23] bg-[#0b0c10]/95 px-6 flex items-center justify-between gap-4 select-none shrink-0 shadow-md relative z-20"
+        >
+          <div className="grid grid-cols-6 gap-6 w-full max-w-5xl mx-auto">
+            {/* Metric 1 */}
+            <div className="flex flex-col">
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><Users size={10} className="text-brandOrange" /> Riders</span>
+              <span className="text-sm font-black text-white mt-0.5 uppercase tracking-wide">
+                {isJoined ? `${riders.length} Active` : '0 Pilots'}
+              </span>
+            </div>
+
+            {/* Metric 2 */}
+            <div className="flex flex-col">
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><Zap size={10} className="text-brandOrange" /> Live Speed</span>
+              <span className="text-sm font-black text-white mt-0.5 tracking-wide">
+                {isJoined ? `${speed} km/h` : '0 km/h'}
+              </span>
+            </div>
+
+            {/* Metric 3 */}
+            <div className="flex flex-col">
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><MapPin size={10} className="text-brandOrange" /> Remaining</span>
+              <span className="text-sm font-black text-white mt-0.5 tracking-wide">
+                {isJoined ? metrics.distanceLeft : '0.0 km'}
+              </span>
+            </div>
+
+            {/* Metric 4 */}
+            <div className="flex flex-col">
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><Compass size={10} className="text-brandOrange" /> Target ETA</span>
+              <span className="text-sm font-black text-white mt-0.5 uppercase tracking-wide">
+                {isJoined ? metrics.eta : '--:--'}
+              </span>
+            </div>
+
+            {/* Metric 5 */}
+            <div className="flex flex-col">
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><CloudSun size={10} className="text-brandOrange" /> Weather</span>
+              <span className="text-sm font-black text-white mt-0.5 uppercase tracking-wide">28°C Clear</span>
+            </div>
+
+            {/* Metric 6 */}
+            <div className="flex flex-col">
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><Activity size={10} className="text-brandOrange" /> Run Progress</span>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="grow bg-neutral-800 h-1.5 rounded-full overflow-hidden border border-neutral-700/50">
+                  <div className="bg-brandOrange h-full transition-all" style={{ width: `${isJoined ? metrics.progress : 0}%` }}></div>
+                </div>
+                <span className="text-[10px] font-black text-white shrink-0">{isJoined ? metrics.progress : 0}%</span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* LARGE INTERACTIVE MAP CONTAINER */}
+        <div className="grow w-full h-full relative z-10">
+          <MapContainer
+            center={[currentPosition.lat, currentPosition.lng]}
+            zoom={14}
+            zoomControl={false}
+            style={{ width: '100%', height: '100%' }}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            />
+
+            <MapController center={autoCenter ? [currentPosition.lat, currentPosition.lng] : null} />
+            <MapClickHandler onClick={handleMapClick} />
+
+            {/* Polyline Route */}
+            {route.length > 0 && (
+              <Polyline
+                positions={route}
+                color="#fc6100"
+                weight={4}
+                opacity={0.85}
+              />
+            )}
+
+            {/* Checkpoints Markers */}
+            {checkpoints.map((cp, idx) => (
+              <Marker
+                key={idx}
+                position={[cp.lat, cp.lng]}
+                icon={createCheckpointIcon(cp.order)}
+              >
+                <Popup>
+                  <div className="text-xs p-1 font-sans">
+                    <h4 className="font-extrabold text-[#fc6100] uppercase text-[10px]">Checkpoint {cp.order}</h4>
+                    <p className="text-white mt-0.5 font-bold uppercase text-[9px]">{cp.name}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
+            {/* Destination Marker */}
+            {destination && (
+              <Marker
+                position={[destination.lat, destination.lng]}
+                icon={createFinishIcon()}
+              >
+                <Popup>
+                  <div className="text-xs p-1 font-sans text-center">
+                    <span className="font-black text-white text-[10px] uppercase">🏁 Target Endpoint</span>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
+            {/* Live Riders Markers */}
+            {riders.map((loc) => {
+              const isMe = loc.socketId === socketRef.current?.id;
+              return (
+                <Marker
+                  key={loc.socketId}
+                  position={[loc.lat, loc.lng]}
+                  icon={createRiderIcon(loc.color, isMe, loc.isSOS)}
+                >
+                  <Popup>
+                    <div className="text-xs p-2 min-w-[120px] font-sans">
+                      <div className="flex items-center justify-between border-b border-[#242424] pb-1.5 mb-1.5 select-none">
+                        <span className="font-black text-white text-xs uppercase tracking-wider">{loc.nickname}</span>
+                        {isMe && <span className="text-[8px] bg-brandOrange/20 text-brandOrange px-1.5 rounded uppercase font-black">Me</span>}
+                      </div>
+                      <div className="space-y-1 font-black text-neutral-400 uppercase text-[9px]">
+                        <p>Speed: <span className="text-white">{isMe ? speed : loc.speed || 0} km/h</span></p>
+                        <p>Battery: <span className="text-white">{isMe ? battery : loc.batteryPercentage || 100}%</span></p>
+                        <p>Distress: <span className={loc.isSOS ? 'text-red-500' : 'text-emerald-500'}>{loc.isSOS ? 'ACTIVE' : 'NONE'}</span></p>
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+          </MapContainer>
+
+          {/* FLOATING ACTION DECKS OVER MAP */}
+          <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
+            {/* Auto-Centering and Geolocation controls */}
+            <button
+              onClick={() => setAutoCenter(prev => !prev)}
+              className={`p-2.5 rounded-lg shadow-2xl border transition-all ${
+                autoCenter ? 'bg-brandOrange/25 border-brandOrange/45 text-brandOrange shadow-brandOrange/5' : 'glass-panel text-neutral-400'
+              }`}
+              title="Toggle Dynamic Autocenter"
+            >
+              <Compass size={16} />
+            </button>
+            <button
+              onClick={() => {
+                setAutoCenter(true);
+                setCurrentPosition({ ...currentPosition });
+              }}
+              className="p-2.5 glass-panel hover:bg-neutral-800 border border-[#1a1c23] rounded-lg text-white shadow-2xl"
+              title="Locate GPS Position"
+            >
+              <Navigation size={16} />
+            </button>
+          </div>
+
+          {/* Leader Route Operations and Checkpoint selectors */}
+          {isJoined && isCreator && (
+            <div className="absolute top-4 right-4 z-20 flex gap-2.5 select-none">
+              {/* Checkpoint Mode trigger */}
+              {destination && (
+                <button
+                  onClick={() => setCheckpointMode(prev => !prev)}
+                  className={`px-3.5 py-1.5 rounded-lg border font-black text-[10px] tracking-wider uppercase transition-all shadow-xl ${
+                    checkpointMode ? 'bg-brandOrange/25 border-brandOrange/45 text-brandOrange' : 'glass-panel text-neutral-400 border-[#1a1c23]'
+                  }`}
+                >
+                  {checkpointMode ? '✓ Adding Checkpoints' : '+ Add Checkpoints'}
+                </button>
+              )}
+
+              {/* Clear Route builder */}
+              {destination && (
+                <button
+                  onClick={handleClearRoute}
+                  className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-[#1a1c23] rounded-lg font-black text-[10px] tracking-wider uppercase transition-all shadow-xl flex items-center gap-1.5"
+                >
+                  <Trash2 size={12} /> Clear Route
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Guidance warning bar if route planning is active */}
+          {isJoined && isCreator && !destination && (
+            <div className="absolute bottom-6 left-6 z-20 p-2.5 bg-brandOrange/15 border border-brandOrange/35 rounded-lg text-[9.5px] text-brandOrange font-black uppercase tracking-widest shadow-2xl flex items-center gap-2 select-none animate-pulse">
+              <MapPin size={12} className="shrink-0" />
+              <span>Planning: Click on the map to drop Destination End-Point</span>
+            </div>
+          )}
+
+          {isJoined && isCreator && destination && !checkpointMode && (
+            <div className="absolute bottom-6 left-6 z-20 p-2 bg-[#0c0d12] border border-[#1a1c23] rounded-lg text-[9px] text-neutral-400 font-extrabold uppercase tracking-wider shadow-2xl flex items-center gap-2 select-none">
+              <CheckCircle size={10} className="text-emerald-500 shrink-0" />
+              <span>Route Mapped. Enable "+ Add Checkpoints" to plan milestones.</span>
+            </div>
+          )}
+
+          {/* FLOATING ACTION BOTTOM CONTROLS PANEL */}
+          {isJoined && (
+            <div className="absolute bottom-6 right-6 z-20 flex items-center gap-2 select-none">
+              {/* Emergency SOS Trigger */}
+              <button
+                onClick={handleToggleSOS}
+                className={`py-2 px-3.5 rounded-lg font-black text-[10px] tracking-widest uppercase transition-all shadow-xl flex items-center gap-1.5 shrink-0 ${
+                  riders.find(r => r.socketId === socketRef.current?.id)?.isSOS
+                    ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-red-500/10'
+                    : 'bg-red-600/15 hover:bg-red-600/25 border border-red-500/25 text-red-500'
+                }`}
+              >
+                <ShieldAlert size={14} />
+                <span>{riders.find(r => r.socketId === socketRef.current?.id)?.isSOS ? 'Deactivate SOS' : 'SOS Emergency'}</span>
+              </button>
+
+              {/* Dynamic GPS Radar Live badge */}
+              {isJoined && (
+                <div className="py-2.5 px-3.5 bg-emerald-950/80 border border-emerald-500/20 text-emerald-400 rounded-lg font-black text-[10px] tracking-wider uppercase flex items-center justify-center gap-1.5 shrink-0 select-none animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  🛰️ GPS Live
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 3. Top-Right Active Telemetry & Riders Drawer */}
-      <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2.5">
-        {/* Map Center & Autocenter Controls */}
-        <div className="flex gap-2">
+      {/* RIGHT CHAT & SYSTEM ALERTS PANEL */}
+      <motion.aside 
+        initial={{ x: 100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ duration: 0.3 }}
+        className="w-80 h-full bg-[#0b0c10]/95 border-l border-[#1a1c23] flex flex-col p-5 z-20 shrink-0 select-none shadow-2xl"
+      >
+        {/* Panel Tabs */}
+        <div className="flex bg-[#0c0d12] p-1 rounded-lg border border-[#1a1c23] select-none shrink-0 mb-4">
           <button
-            onClick={() => setAutoCenter(prev => !prev)}
-            className={`p-2 rounded-lg shadow-2xl border transition-all ${
-              autoCenter ? 'bg-brandOrange/25 border-brandOrange/45 text-brandOrange' : 'glass-panel text-neutral-400'
+            onClick={() => setActiveRightTab('chat')}
+            className={`grow py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeRightTab === 'chat' ? 'bg-[#1a1c23] text-brandOrange font-black border border-[#2b2d38]' : 'text-neutral-500 hover:text-neutral-300 font-bold'
             }`}
-            title="Toggle Map Auto-Centering"
           >
-            <Compass size={16} />
+            <MessageSquare size={12} /> Chat
           </button>
           <button
-            onClick={() => {
-              setAutoCenter(true);
-              setCurrentPosition({ ...currentPosition });
-            }}
-            className="p-2 glass-panel hover:bg-neutral-800 rounded-lg text-white shadow-2xl"
-            title="Locate Me"
+            onClick={() => setActiveRightTab('logs')}
+            className={`grow py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeRightTab === 'logs' ? 'bg-[#1a1c23] text-brandOrange font-black border border-[#2b2d38]' : 'text-neutral-500 hover:text-neutral-300 font-bold'
+            }`}
           >
-            <Navigation size={16} />
+            <Bell size={12} /> Run Logs
           </button>
         </div>
 
-        {/* Live Active Riders List */}
-        {isJoined && (
-          <div className="glass-panel p-3.5 rounded-lg shadow-2xl w-44 max-h-56 overflow-y-auto flex flex-col gap-2.5">
-            <span className="text-[8px] text-neutral-400 font-bold uppercase tracking-wider flex items-center gap-1">
-              <Users size={10} /> Group Riders ({riders.length})
-            </span>
-            <div className="space-y-2.5">
-              {riders.map((r) => {
-                const isMe = r.socketId === socketRef.current?.id;
-                return (
-                  <div key={r.socketId} className="flex items-center justify-between text-[10px]">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: r.color }}></span>
-                      <span className="text-white font-extrabold truncate uppercase">{r.nickname}</span>
-                      {isMe && <span className="text-[7px] text-neutral-500 font-black tracking-wide">(ME)</span>}
-                    </div>
-                    {r.isSOS && (
-                      <span className="text-[7px] bg-red-950/80 border border-red-500/20 text-red-500 font-black px-1.5 py-0.5 rounded animate-pulse shrink-0">
-                        SOS
+        {/* Tab 1: Group Chat Panel */}
+        {activeRightTab === 'chat' && (
+          <div className="grow flex flex-col overflow-hidden">
+            {/* Message history */}
+            <div className="grow overflow-y-auto mb-4 space-y-3.5 pr-1 select-text">
+              {!isJoined ? (
+                <div className="h-full flex flex-col items-center justify-center text-neutral-600 gap-2 text-center select-none font-bold uppercase tracking-wider">
+                  <MessageSquare size={20} className="text-neutral-700" />
+                  <span className="text-[10px]">Chat is locked until you create or join a ride.</span>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-neutral-600 gap-2 text-center select-none font-bold uppercase tracking-wider">
+                  <Compass size={20} className="text-neutral-700 animate-spin" style={{ animationDuration: '6s' }} />
+                  <span className="text-[10px]">No chat pings received yet</span>
+                </div>
+              ) : (
+                messages.map((msg) => {
+                  const isMe = msg.nickname === nickname;
+                  return (
+                    <div
+                      key={msg._id}
+                      className={`flex flex-col max-w-[85%] ${isMe ? 'ml-auto items-end animate-fade-in' : 'mr-auto items-start'}`}
+                    >
+                      <span className="text-[8px] text-neutral-500 font-black mb-0.5 px-1 uppercase tracking-wider">
+                        {isMe ? 'Me' : msg.nickname}
                       </span>
-                    )}
-                  </div>
-                );
-              })}
+                      <div
+                        className={`p-2.5 rounded-lg text-xs ${
+                          isMe
+                            ? 'bg-brandOrange text-white rounded-tr-none font-semibold'
+                            : 'bg-[#1c1c1e] text-neutral-200 border border-[#2c2c2e] rounded-tl-none font-medium'
+                        }`}
+                      >
+                        {msg.message}
+                      </div>
+                      <span className="text-[8px] text-neutral-600 font-extrabold mt-1 px-1">{msg.timestamp}</span>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={messagesEndRef} />
             </div>
+
+            {/* Input Submission bar */}
+            {isJoined && (
+              <form onSubmit={handleSendChat} className="mt-auto flex items-center gap-2 shrink-0">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="SEND MESSAGE..."
+                  required
+                  className="grow py-2 px-3 rounded-lg glass-input text-xs border border-[#1a1c23]"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim()}
+                  className="p-2.5 bg-brandOrange hover:bg-[#e25700] disabled:opacity-40 text-white rounded-lg transition-all shadow flex items-center justify-center shrink-0"
+                >
+                  <ArrowRight size={14} />
+                </button>
+              </form>
+            )}
           </div>
         )}
-      </div>
 
-      {/* 4. Full-Screen Flashing SOS Alert Warning Overlay */}
+        {/* Tab 2: System notifications & logs */}
+        {activeRightTab === 'logs' && (
+          <div className="grow overflow-y-auto pr-1">
+            {systemLogs.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-neutral-600 gap-2 text-center select-none font-bold uppercase tracking-wider">
+                <Bell size={20} className="text-neutral-700" />
+                <span className="text-[10px]">No logs generated yet</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {systemLogs.map((log, idx) => (
+                  <div key={idx} className="p-2.5 rounded-lg border border-[#1a1c23] bg-[#0c0d12] flex flex-col gap-1">
+                    <span className="text-[10px] text-neutral-200 font-extrabold tracking-wide select-text uppercase">{log.text}</span>
+                    <span className="text-[8px] text-neutral-500 font-black self-end">{log.time}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </motion.aside>
+
+      {/* FULL SCREEN EMERGENCY SOS DISTRESS OVERLAY */}
       {activeSOS && (
-        <div className="absolute inset-0 bg-red-950/85 z-40 flex flex-col items-center justify-center p-6 animate-pulse-red">
+        <div className="absolute inset-0 bg-red-950/90 z-40 flex flex-col items-center justify-center p-6 select-none animate-pulse-red">
           <div className="w-14 h-14 rounded-full bg-red-600 border border-white flex items-center justify-center text-white mb-4 animate-bounce">
             <ShieldAlert size={28} />
           </div>
           <h2 className="text-xl font-black text-white tracking-widest uppercase">
             🚨 EMERGENCY BROADCAST 🚨
           </h2>
-          <p className="text-white/80 text-xs font-bold mt-2 uppercase tracking-wide text-center max-w-xs">
+          <p className="text-white/80 text-xs font-bold mt-2 uppercase tracking-wide text-center max-w-xs leading-relaxed">
             Rider <span className="text-white font-black underline">{activeSOS.nickname}</span> triggered an emergency SOS distress alert.
           </p>
           <div className="flex gap-3 mt-8">
@@ -616,13 +1016,13 @@ function App() {
                 setActiveSOS(null);
                 triggerNotification(`Centering map on ${activeSOS.nickname}...`);
               }}
-              className="px-4 py-2 bg-white text-red-700 font-black text-xs uppercase tracking-widest rounded-lg shadow-lg hover:bg-neutral-100 transition-all"
+              className="px-5 py-2.5 bg-white text-red-700 font-black text-xs uppercase tracking-widest rounded-lg shadow-lg hover:bg-neutral-100 transition-all"
             >
-              Locate Rider
+              Locate Pilot
             </button>
             <button
               onClick={() => setActiveSOS(null)}
-              className="px-4 py-2 bg-transparent border border-white/20 text-white/70 hover:text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-all"
+              className="px-5 py-2.5 bg-transparent border border-white/20 text-white/70 hover:text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-all"
             >
               Dismiss
             </button>
@@ -630,150 +1030,9 @@ function App() {
         </div>
       )}
 
-      {/* 5. Bottom Coordination Control Deck */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-md px-4">
-        <div className="glass-panel p-4 rounded-xl shadow-2xl flex flex-col gap-3.5 select-none relative">
-          
-          {errorMsg && (
-            <div className="p-2 mb-1 bg-red-500/10 border border-red-500/20 text-red-400 rounded-md text-[10px] font-bold text-center uppercase tracking-wider">
-              {errorMsg}
-            </div>
-          )}
-
-          {/* SCENARIO A: User is in the Dashboard (Not Joined) */}
-          {!isJoined ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between border-b border-[#242424] pb-2">
-                <span className="text-[10px] text-neutral-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                  🏁 EasyTrip Cockpit
-                </span>
-                <span className="text-[8px] bg-brandOrange/15 text-brandOrange border border-brandOrange/25 px-2 py-0.5 rounded font-black uppercase tracking-wider">
-                  Rider: {nickname}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3.5">
-                {/* Create Ride widget */}
-                <button
-                  onClick={handleCreateRide}
-                  className="py-3 px-3 rounded-lg bg-brandOrange hover:bg-[#e25700] text-white font-black text-xs tracking-wider uppercase transition-all shadow-md flex flex-col items-center justify-center gap-1.5"
-                >
-                  <Plus size={16} />
-                  <span>Create Ride</span>
-                </button>
-
-                {/* Join Ride form */}
-                <form onSubmit={handleJoinRide} className="flex flex-col gap-2">
-                  <input
-                    type="text"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value)}
-                    placeholder="ENTER RIDE CODE"
-                    required
-                    maxLength={10}
-                    className="w-full py-1.5 px-2 rounded glass-input text-[10px] text-center font-bold uppercase tracking-wider text-white"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!joinCodeInput.trim()}
-                    className="py-1.5 px-3 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-45 text-white border border-[#242424] rounded font-black text-[10px] tracking-wider uppercase transition-all flex items-center justify-center gap-1"
-                  >
-                    Join Ride
-                  </button>
-                </form>
-              </div>
-            </div>
-          ) : (
-            /* SCENARIO B: User has created/joined a Ride Session */
-            <div className="flex flex-col gap-3.5">
-              {/* Telemetry statistics overlay */}
-              <div className="grid grid-cols-3 gap-2 text-center select-none border-b border-[#242424] pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider">SPEED</span>
-                  <span className="text-sm font-black text-white">{speed} <span className="text-[9px] text-neutral-400">km/h</span></span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider">BATTERY</span>
-                  <span className={`text-sm font-black ${battery < 25 ? 'text-red-500' : 'text-white'}`}>{battery}%</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider">RIDE ROOM</span>
-                  <span className="text-sm font-black text-brandOrange tracking-wider select-all">{rideCode}</span>
-                </div>
-              </div>
-
-              {/* Creator instructions guidance */}
-              {isCreator && !destination && (
-                <div className="p-2.5 bg-brandOrange/10 border border-brandOrange/20 rounded-lg text-[9.5px] text-brandOrange font-bold uppercase tracking-wide leading-relaxed text-center flex items-center justify-center gap-1.5 animate-pulse">
-                  <MapPin size={12} className="shrink-0" />
-                  <span>Click anywhere on the map to set DESTINATION!</span>
-                </div>
-              )}
-
-              {isCreator && destination && (
-                <div className="p-2 bg-[#121212] border border-[#242424] rounded text-[9px] text-neutral-400 font-bold uppercase text-center flex items-center justify-center gap-1.5">
-                  <CheckCircle size={10} className="text-emerald-500 shrink-0" />
-                  <span>Destination Selected. Click map to add Checkpoints!</span>
-                </div>
-              )}
-
-              {/* Indoor Simulators & Emergency SOS Deck */}
-              <div className="flex items-center gap-2 select-none">
-                {/* Emergency SOS Distress Alert Toggle */}
-                <button
-                  onClick={handleToggleSOS}
-                  className={`grow py-2.5 px-3.5 rounded-lg font-black text-[10px] tracking-wider uppercase transition-all shadow-md flex items-center justify-center gap-1.5 shrink-0 ${
-                    riders.find(r => r.socketId === socketRef.current?.id)?.isSOS
-                      ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                      : 'bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-500'
-                  }`}
-                >
-                  <ShieldAlert size={14} />
-                  <span>{riders.find(r => r.socketId === socketRef.current?.id)?.isSOS ? 'Cancel SOS' : 'Trigger SOS'}</span>
-                </button>
-
-                {/* Simulator Driver control */}
-                {destination && (
-                  <>
-                    {!isSimulating ? (
-                      <button
-                        onClick={startSimulation}
-                        className="py-2.5 px-3 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-[#242424] font-black text-[10px] tracking-wider uppercase transition-all flex items-center justify-center gap-1 shrink-0"
-                        title="Simulate Route Movement"
-                      >
-                        <Play size={12} />
-                        Sim Route
-                      </button>
-                    ) : (
-                      <button
-                        onClick={stopSimulation}
-                        className="py-2.5 px-3 rounded-lg bg-[#2b2b2b] text-brandOrange border border-brandOrange/25 font-black text-[10px] tracking-wider uppercase transition-all flex items-center justify-center gap-1 shrink-0 animate-pulse"
-                      >
-                        <Square size={12} />
-                        Stop Sim
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {/* Disconnect Exit session */}
-                <button
-                  onClick={handleLeaveRide}
-                  className="py-2.5 px-3 bg-neutral-900 border border-[#242424] hover:bg-neutral-800 text-neutral-400 hover:text-white rounded-lg font-black text-[10px] tracking-wider uppercase transition-all flex items-center justify-center gap-1 shrink-0"
-                  title="Leave Trip room"
-                >
-                  <LogOut size={12} />
-                  Exit
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 6. Toast Notifications overlay banner */}
+      {/* FLOAT NOTIFICATION BANNER */}
       {toast && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-neutral-900/95 border border-[#242424] py-2 px-4 rounded-lg text-white font-extrabold text-[10px] uppercase tracking-wider shadow-2xl backdrop-blur-md fade-in flex items-center gap-2 select-none">
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 bg-neutral-900/95 border border-[#1a1c23] py-2 px-4 rounded-lg text-white font-extrabold text-[10px] uppercase tracking-wider shadow-2xl backdrop-blur-md fade-in flex items-center gap-2 select-none">
           <Award size={12} className="text-brandOrange" />
           <span>{toast}</span>
         </div>
