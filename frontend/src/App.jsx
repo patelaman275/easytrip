@@ -69,7 +69,6 @@ function App() {
   const [checkpoints, setCheckpoints] = useState([]);
   const [route, setRoute] = useState([]);
   const [isCreator, setIsCreator] = useState(false);
-  const [checkpointMode, setCheckpointMode] = useState(false);
 
   // Group Chat & System Logs (Right Panel)
   const [messages, setMessages] = useState([]);
@@ -125,7 +124,7 @@ function App() {
       setIsCreator(true);
       setIsJoined(true);
       setErrorMsg('');
-      addSystemLog('Ride room created. Set your destination on the map.');
+      addSystemLog('Ride room created. Click on the map to set your target destination.');
     });
 
     socketRef.current.on('rideJoined', (ride) => {
@@ -134,7 +133,6 @@ function App() {
       setDestination(ride.destination);
       setCheckpoints(ride.checkpoints);
       setRoute(ride.route);
-      // Boot start point based on first participant's creation marker
       const creatorRider = Object.values(ride.riders).find(r => r.socketId === ride.creatorId);
       setStartPoint(creatorRider ? { lat: creatorRider.lat, lng: creatorRider.lng } : currentPosition);
       setIsCreator(false);
@@ -238,7 +236,43 @@ function App() {
     };
   }, [nickname, isJoined, rideCode]);
 
-  // 3. User Actions
+  // 3. OSRM Road Routing API Integration
+  const fetchRoadRoute = async (start, dest, cps = []) => {
+    try {
+      // Sort checkpoints by order sequence
+      const sortedCps = [...cps].sort((a, b) => a.order - b.order);
+      
+      // Construct routing coordinate segments list: Start Point -> Checkpoints -> Destination End Point
+      const pointsList = [
+        start,
+        ...sortedCps.map(cp => ({ lat: cp.lat, lng: cp.lng })),
+        dest
+      ];
+
+      // OSRM coordinates are structured: lng,lat separated by semicolons
+      const coordString = pointsList.map(pt => `${pt.lng},${pt.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.routes && data.routes.length > 0) {
+        // Parse geometry coordinates from [lng, lat] back into Leaflet's [lat, lng] format
+        const roadCoords = data.routes[0].geometry.coordinates.map(coord => [coord[1], coord[0]]);
+        return roadCoords;
+      }
+    } catch (err) {
+      console.warn('OSRM road routing failed, falling back to straight segment map:', err.message);
+    }
+    
+    // Safety Fallback: Straight segment route connections
+    const fallbackPath = [[start.lat, start.lng]];
+    cps.forEach(cp => fallbackPath.push([cp.lat, cp.lng]));
+    fallbackPath.push([dest.lat, dest.lng]);
+    return fallbackPath;
+  };
+
+  // 4. User Actions
   const handleEnterNickname = (e) => {
     e.preventDefault();
     if (!tempNickname.trim()) return;
@@ -295,26 +329,25 @@ function App() {
     setSystemLogs([]);
   };
 
-  const handleMapClick = (latlng) => {
+  const handleMapClick = async (latlng) => {
     if (!isJoined || !isCreator || !rideCode) return;
 
     if (!destination) {
-      // 1. Select destination finish point
+      // 1. Select destination finish point & query actual road routing path
       const destCoords = { lat: latlng.lat, lng: latlng.lng };
-      const routePath = [
-        [currentPosition.lat, currentPosition.lng],
-        [latlng.lat, latlng.lng],
-      ];
+      triggerNotification('Connecting target road routes...');
+
+      const roadRoute = await fetchRoadRoute(currentPosition, destCoords, []);
       setDestination(destCoords);
-      setRoute(routePath);
+      setRoute(roadRoute);
 
       socketRef.current.emit('updateRoute', {
         rideCode,
         destination: destCoords,
-        route: routePath,
+        route: roadRoute,
       });
-    } else if (checkpointMode) {
-      // 2. Select checkpoint markers
+    } else {
+      // 2. Select checkpoints (dynamic road routing recalculation)
       const cpIndex = checkpoints.length + 1;
       const newCheckpoint = {
         name: `CP-${cpIndex}`,
@@ -323,9 +356,25 @@ function App() {
         order: cpIndex,
       };
 
+      triggerNotification(`Planning route segment via Checkpoint ${cpIndex}...`);
+      const updatedCPs = [...checkpoints, newCheckpoint];
+      setCheckpoints(updatedCPs);
+
+      // Re-calculate the winding road route passing through all checkpoints to destination
+      const roadRoute = await fetchRoadRoute(currentPosition, destination, updatedCPs);
+      setRoute(roadRoute);
+
+      // Broadcast checkpoints
       socketRef.current.emit('addCheckpoint', {
         rideCode,
         checkpoint: newCheckpoint,
+      });
+
+      // Broadcast recalculated route geometry
+      socketRef.current.emit('updateRoute', {
+        rideCode,
+        destination,
+        route: roadRoute,
       });
     }
   };
@@ -386,7 +435,6 @@ function App() {
       return { distanceLeft: '0.0 km', progress: 0, eta: '--:--' };
     }
 
-    // Geodesic total and remaining distances in km
     const totalDist = startPoint 
       ? calculateDistance(startPoint.lat, startPoint.lng, destination.lat, destination.lng) 
       : 10;
@@ -394,7 +442,6 @@ function App() {
 
     const progressPercent = Math.min(100, Math.max(0, Math.round(((totalDist - remainingDist) / totalDist) * 100)));
     
-    // ETA Calculation based on speed or default
     let etaStr = '--:--';
     if (speed > 0) {
       const timeHours = remainingDist / speed;
@@ -650,7 +697,7 @@ function App() {
 
             {/* Metric 3 */}
             <div className="flex flex-col">
-              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><MapPin size={10} className="text-brandOrange" /> Remaining</span>
+              <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider flex items-center gap-1"><MapPin size={10} className="text-brandOrange" /> Distance Left</span>
               <span className="text-sm font-black text-white mt-0.5 tracking-wide">
                 {isJoined ? metrics.distanceLeft : '0.0 km'}
               </span>
@@ -699,7 +746,7 @@ function App() {
             <MapController center={autoCenter ? [currentPosition.lat, currentPosition.lng] : null} />
             <MapClickHandler onClick={handleMapClick} />
 
-            {/* Polyline Route */}
+            {/* Winding Road Routing Line */}
             {route.length > 0 && (
               <Polyline
                 positions={route}
@@ -768,7 +815,6 @@ function App() {
 
           {/* FLOATING ACTION DECKS OVER MAP */}
           <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
-            {/* Auto-Centering and Geolocation controls */}
             <button
               onClick={() => setAutoCenter(prev => !prev)}
               className={`p-2.5 rounded-lg shadow-2xl border transition-all ${
@@ -793,25 +839,13 @@ function App() {
           {/* Leader Route Operations and Checkpoint selectors */}
           {isJoined && isCreator && (
             <div className="absolute top-4 right-4 z-20 flex gap-2.5 select-none">
-              {/* Checkpoint Mode trigger */}
-              {destination && (
-                <button
-                  onClick={() => setCheckpointMode(prev => !prev)}
-                  className={`px-3.5 py-1.5 rounded-lg border font-black text-[10px] tracking-wider uppercase transition-all shadow-xl ${
-                    checkpointMode ? 'bg-brandOrange/25 border-brandOrange/45 text-brandOrange' : 'glass-panel text-neutral-400 border-[#1a1c23]'
-                  }`}
-                >
-                  {checkpointMode ? '✓ Adding Checkpoints' : '+ Add Checkpoints'}
-                </button>
-              )}
-
               {/* Clear Route builder */}
               {destination && (
                 <button
                   onClick={handleClearRoute}
                   className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-[#1a1c23] rounded-lg font-black text-[10px] tracking-wider uppercase transition-all shadow-xl flex items-center gap-1.5"
                 >
-                  <Trash2 size={12} /> Clear Route
+                  <Trash2 size={12} /> Clear Run
                 </button>
               )}
             </div>
@@ -821,14 +855,14 @@ function App() {
           {isJoined && isCreator && !destination && (
             <div className="absolute bottom-6 left-6 z-20 p-2.5 bg-brandOrange/15 border border-brandOrange/35 rounded-lg text-[9.5px] text-brandOrange font-black uppercase tracking-widest shadow-2xl flex items-center gap-2 select-none animate-pulse">
               <MapPin size={12} className="shrink-0" />
-              <span>Planning: Click on the map to drop Destination End-Point</span>
+              <span>Planning: Click anywhere on roads to drop Destination End-Point</span>
             </div>
           )}
 
-          {isJoined && isCreator && destination && !checkpointMode && (
+          {isJoined && isCreator && destination && (
             <div className="absolute bottom-6 left-6 z-20 p-2 bg-[#0c0d12] border border-[#1a1c23] rounded-lg text-[9px] text-neutral-400 font-extrabold uppercase tracking-wider shadow-2xl flex items-center gap-2 select-none">
               <CheckCircle size={10} className="text-emerald-500 shrink-0" />
-              <span>Route Mapped. Enable "+ Add Checkpoints" to plan milestones.</span>
+              <span>Destination Configured. Click anywhere on map to add Checkpoints!</span>
             </div>
           )}
 
