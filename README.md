@@ -124,3 +124,4 @@ To test the application locally in full multi-client simulation mode:
 7. On Rider B's screen, press **Start Simulator**. You will see Rider B's marker begin moving along the scenic route polyline!
 8. Observe Rider A's screen: Rider B is moving in real-time, their speed changes, and milestone progress toast alerts flash as they pass checkpoints!
 9. Press **Hold SOS** on Rider B's screen: Rider A's screen is instantly locked with a flashing full-screen red warning popup containing Rider B's GPS coordinates!
+"# Easytripv2" 
