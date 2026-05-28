@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Compass, Users, MapPin, Plus, Share2, LogOut, ShieldAlert, Award, 
   Play, Square, Navigation, CheckCircle, MessageSquare, Bell, CloudSun,
-  Activity, Zap, Trash2, ArrowRight, ClipboardCopy
+  Activity, Zap, Trash2, ArrowRight
 } from 'lucide-react';
 
 // Connect to local Node server or Render backend dynamically
@@ -239,7 +238,7 @@ function App() {
     };
   }, [nickname, isJoined, rideCode]);
 
-  // 3. System actions
+  // 3. User Actions
   const handleEnterNickname = (e) => {
     e.preventDefault();
     if (!tempNickname.trim()) return;
@@ -248,6 +247,7 @@ function App() {
     sessionStorage.setItem('easytrip_nickname', trimmed);
     setNickname(trimmed);
 
+    // Auto-join if user holds a pending ride share link
     if (pendingJoinCodeRef.current && socketRef.current) {
       socketRef.current.emit('joinRide', {
         rideCode: pendingJoinCodeRef.current.toUpperCase(),
@@ -293,7 +293,6 @@ function App() {
     setActiveSOS(null);
     setMessages([]);
     setSystemLogs([]);
-    stopSimulation();
   };
 
   const handleMapClick = (latlng) => {
@@ -463,12 +462,7 @@ function App() {
       <div className="min-h-screen bg-darkBg flex flex-col items-center justify-center p-4 font-sans select-none relative">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(252,97,0,0.12),transparent_70%)] pointer-events-none"></div>
 
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-sm p-6 rounded-lg glass-panel shadow-2xl relative z-10 flex flex-col items-center border border-[#242424]"
-        >
+        <div className="w-full max-w-sm p-6 rounded-lg glass-panel shadow-2xl relative z-10 flex flex-col items-center border border-[#242424] transition-all duration-300">
           <div className="w-10 h-10 rounded bg-brandOrange flex items-center justify-center text-white font-black text-xl mb-4 shadow-lg animate-pulse-orange">
             🧭
           </div>
@@ -503,7 +497,7 @@ function App() {
               Initialize Cockpit
             </button>
           </form>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -512,12 +506,7 @@ function App() {
     <div className="h-screen w-screen bg-[#060608] overflow-hidden flex font-sans text-white select-none relative">
       
       {/* LEFT SIDEBAR PANEL */}
-      <motion.aside 
-        initial={{ x: -100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.3 }}
-        className="w-80 h-full bg-[#0b0c10]/95 border-r border-[#1a1c23] flex flex-col p-5 z-20 shrink-0 select-none shadow-2xl"
-      >
+      <aside className="w-80 h-full bg-[#0b0c10]/95 border-r border-[#1a1c23] flex flex-col p-5 z-20 shrink-0 select-none shadow-2xl transition-all duration-300">
         {/* App Title Logo */}
         <div className="flex items-center gap-3 mb-6 select-none shrink-0">
           <div className="w-7 h-7 rounded bg-brandOrange flex items-center justify-center text-white font-black text-sm shadow-md shadow-brandOrange/15">
@@ -598,34 +587,29 @@ function App() {
             </div>
 
             <div className="space-y-2 pr-1">
-              <AnimatePresence>
-                {riders.map((r) => {
-                  const isMe = r.socketId === socketRef.current?.id;
-                  return (
-                    <motion.div
-                      key={r.socketId}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                      className="p-2.5 rounded-lg border border-[#1a1c23] bg-[#0c0d12] flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-inner" style={{ backgroundColor: r.color }}></span>
-                        <span className="text-white font-extrabold text-xs truncate uppercase tracking-wide">{r.nickname}</span>
-                        {isMe && <span className="text-[8px] text-neutral-500 font-black shrink-0">(ME)</span>}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 select-none">
-                        {r.isSOS && (
-                          <span className="text-[8px] bg-red-950/80 border border-red-500/20 text-red-500 font-black px-1.5 py-0.5 rounded animate-pulse">
-                            SOS
-                          </span>
-                        )}
-                        <span className="text-[10px] text-neutral-400 font-bold">{isMe ? speed : r.speed || 0} km/h</span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
+              {riders.map((r) => {
+                const isMe = r.socketId === socketRef.current?.id;
+                return (
+                  <div
+                    key={r.socketId}
+                    className="p-2.5 rounded-lg border border-[#1a1c23] bg-[#0c0d12] flex items-center justify-between transition-all duration-200"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-inner" style={{ backgroundColor: r.color }}></span>
+                      <span className="text-white font-extrabold text-xs truncate uppercase tracking-wide">{r.nickname}</span>
+                      {isMe && <span className="text-[8px] text-neutral-500 font-black shrink-0">(ME)</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 select-none">
+                      {r.isSOS && (
+                        <span className="text-[8px] bg-red-950/80 border border-red-500/20 text-red-500 font-black px-1.5 py-0.5 rounded animate-pulse">
+                          SOS
+                        </span>
+                      )}
+                      <span className="text-[10px] text-neutral-400 font-bold">{isMe ? speed : r.speed || 0} km/h</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -640,18 +624,13 @@ function App() {
             <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-widest">Active Pilot</span>
           </div>
         </div>
-      </motion.aside>
+      </aside>
 
       {/* CENTER INTERACTIVE WORKSPACE */}
       <div className="grow flex flex-col h-full overflow-hidden relative z-10">
         
         {/* TOP METRICS TELEMETRY GRID */}
-        <motion.div 
-          initial={{ y: -50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.3 }}
-          className="h-20 border-b border-[#1a1c23] bg-[#0b0c10]/95 px-6 flex items-center justify-between gap-4 select-none shrink-0 shadow-md relative z-20"
-        >
+        <div className="h-20 border-b border-[#1a1c23] bg-[#0b0c10]/95 px-6 flex items-center justify-between gap-4 select-none shrink-0 shadow-md relative z-20 transition-all">
           <div className="grid grid-cols-6 gap-6 w-full max-w-5xl mx-auto">
             {/* Metric 1 */}
             <div className="flex flex-col">
@@ -702,7 +681,7 @@ function App() {
               </div>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* LARGE INTERACTIVE MAP CONTAINER */}
         <div className="grow w-full h-full relative z-10">
@@ -882,12 +861,7 @@ function App() {
       </div>
 
       {/* RIGHT CHAT & SYSTEM ALERTS PANEL */}
-      <motion.aside 
-        initial={{ x: 100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.3 }}
-        className="w-80 h-full bg-[#0b0c10]/95 border-l border-[#1a1c23] flex flex-col p-5 z-20 shrink-0 select-none shadow-2xl"
-      >
+      <aside className="w-80 h-full bg-[#0b0c10]/95 border-l border-[#1a1c23] flex flex-col p-5 z-20 shrink-0 select-none shadow-2xl transition-all duration-300">
         {/* Panel Tabs */}
         <div className="flex bg-[#0c0d12] p-1 rounded-lg border border-[#1a1c23] select-none shrink-0 mb-4">
           <button
@@ -994,7 +968,7 @@ function App() {
             )}
           </div>
         )}
-      </motion.aside>
+      </aside>
 
       {/* FULL SCREEN EMERGENCY SOS DISTRESS OVERLAY */}
       {activeSOS && (
