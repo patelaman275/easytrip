@@ -7,6 +7,7 @@ const User = require('../models/User');
 const socketHandler = (io) => {
   // Keep track of active sockets and users in-memory for fast messaging/presence
   const onlineUsers = new Map(); // socket.id -> { userId, tripId, username }
+  const locationCache = new Map(); // tripId -> Map(userId -> locationData)
 
   io.on('connection', (socket) => {
     console.log('Rider connected to socket:', socket.id);
@@ -34,6 +35,12 @@ const socketHandler = (io) => {
           }
         });
         io.to(`trip_${tripId}`).emit('online_riders_update', activeRiders);
+
+        // Also broadcast any existing locations in cache immediately upon joining
+        if (locationCache.has(tripId)) {
+          const locationsArray = Array.from(locationCache.get(tripId).values());
+          socket.emit('rider_locations_updated', locationsArray);
+        }
       } catch (error) {
         console.error('Socket join_trip_room error:', error.message);
       }
@@ -44,8 +51,30 @@ const socketHandler = (io) => {
       try {
         if (!tripId || !userId || lat === undefined || lng === undefined) return;
 
-        // Upsert to DB Location
-        await Location.findOneAndUpdate(
+        // Fetch username from online users or default
+        const activeUser = onlineUsers.get(socket.id);
+        const username = activeUser ? activeUser.username : 'Rider';
+
+        // 1. Instantly update in-memory cache for ultra-resilient streaming
+        if (!locationCache.has(tripId)) {
+          locationCache.set(tripId, new Map());
+        }
+        locationCache.get(tripId).set(userId, {
+          userId,
+          username,
+          lat,
+          lng,
+          speed: speed || 0,
+          batteryPercentage: batteryPercentage || 100,
+          updatedAt: new Date(),
+        });
+
+        // 2. Broadcast the cached array of locations immediately (zero DB delay/dependency)
+        const locationsArray = Array.from(locationCache.get(tripId).values());
+        io.to(`trip_${tripId}`).emit('rider_locations_updated', locationsArray);
+
+        // 3. Perform Mongoose/MongoDB upserts in the background (failures are non-blocking)
+        Location.findOneAndUpdate(
           { user: userId, trip: tripId },
           {
             location: { lat, lng },
@@ -54,32 +83,17 @@ const socketHandler = (io) => {
             updatedAt: new Date(),
           },
           { upsert: true, new: true }
-        );
-
-        // Also update User profile speed/battery telemetry
-        await User.findByIdAndUpdate(userId, {
-          'riderDetails.speed': speed || 0,
-          'riderDetails.batteryPercentage': batteryPercentage || 100,
+        ).catch((dbErr) => {
+          console.warn(`Location DB write deferred/skipped: ${dbErr.message}`);
         });
 
-        // Retrieve all coordinates for riders on this trip
-        const locations = await Location.find({ trip: tripId })
-          .populate('user', 'username profileImage riderDetails')
-          .lean();
+        User.findByIdAndUpdate(userId, {
+          'riderDetails.speed': speed || 0,
+          'riderDetails.batteryPercentage': batteryPercentage || 100,
+        }).catch((dbErr) => {
+          console.warn(`User telemetry DB update deferred: ${dbErr.message}`);
+        });
 
-        const formattedLocations = locations.map((loc) => ({
-          userId: loc.user._id,
-          username: loc.user.username,
-          profileImage: loc.user.profileImage,
-          lat: loc.location.lat,
-          lng: loc.location.lng,
-          speed: loc.speed,
-          batteryPercentage: loc.batteryPercentage,
-          updatedAt: loc.updatedAt,
-        }));
-
-        // Broadcast to everyone in the room
-        io.to(`trip_${tripId}`).emit('rider_locations_updated', formattedLocations);
       } catch (error) {
         console.error('Socket update_location error:', error.message);
       }
@@ -90,17 +104,11 @@ const socketHandler = (io) => {
       try {
         if (!tripId || !userId || !content) return;
 
-        const newMessage = new Message({
-          trip: tripId,
-          sender: userId,
-          content,
-        });
-        await newMessage.save();
-
+        // 1. Construct populated payload and broadcast instantly
         const populatedMessage = {
-          _id: newMessage._id,
-          content: newMessage.content,
-          timestamp: newMessage.timestamp,
+          _id: 'msg_' + Math.random().toString(36).substring(2, 9) + Date.now(),
+          content,
+          timestamp: new Date(),
           sender: {
             _id: userId,
             username: username,
@@ -108,6 +116,17 @@ const socketHandler = (io) => {
         };
 
         io.to(`trip_${tripId}`).emit('new_chat_message', populatedMessage);
+
+        // 2. Write to MongoDB in background (completely non-blocking)
+        const newMessage = new Message({
+          trip: tripId,
+          sender: userId,
+          content,
+        });
+        newMessage.save().catch((dbErr) => {
+          console.warn(`Chat DB save deferred/skipped: ${dbErr.message}`);
+        });
+
       } catch (error) {
         console.error('Socket send_message error:', error.message);
       }
@@ -123,27 +142,31 @@ const socketHandler = (io) => {
       try {
         if (!tripId || !userId || lat === undefined || lng === undefined) return;
 
+        // 1. Broadcast overlay instantly
+        const sosPayload = {
+          _id: 'sos_' + Math.random().toString(36).substring(2, 9) + Date.now(),
+          tripId,
+          userId,
+          username,
+          location: { lat, lng },
+          batteryPercentage: batteryPercentage || 100,
+          createdAt: new Date(),
+          status: 'active',
+        };
+
+        io.to(`trip_${tripId}`).emit('sos_broadcast', sosPayload);
+
+        // 2. Save in DB in background
         const newSOS = new SOSAlert({
           trip: tripId,
           user: userId,
           location: { lat, lng },
           status: 'active',
         });
-        await newSOS.save();
+        newSOS.save().catch((dbErr) => {
+          console.warn(`SOS DB save deferred/skipped: ${dbErr.message}`);
+        });
 
-        const sosPayload = {
-          _id: newSOS._id,
-          tripId,
-          userId,
-          username,
-          location: { lat, lng },
-          batteryPercentage: batteryPercentage || 100,
-          createdAt: newSOS.createdAt,
-          status: 'active',
-        };
-
-        // Broadcast full overlay alerts to everyone in the trip room
-        io.to(`trip_${tripId}`).emit('sos_broadcast', sosPayload);
       } catch (error) {
         console.error('Socket trigger_sos error:', error.message);
       }
@@ -152,18 +175,21 @@ const socketHandler = (io) => {
     // 6. Resolve SOS Emergency Alert
     socket.on('resolve_sos', async ({ tripId, alertId, userId, username }) => {
       try {
-        const updatedSOS = await SOSAlert.findByIdAndUpdate(
+        // 1. Broadcast resolved state instantly
+        io.to(`trip_${tripId}`).emit('sos_resolved_broadcast', {
+          alertId,
+          resolvedByUsername: username,
+        });
+
+        // 2. Update DB in background
+        SOSAlert.findByIdAndUpdate(
           alertId,
           { status: 'resolved', resolvedBy: userId },
           { new: true }
-        );
+        ).catch((dbErr) => {
+          console.warn(`SOS resolve DB write deferred: ${dbErr.message}`);
+        });
 
-        if (updatedSOS) {
-          io.to(`trip_${tripId}`).emit('sos_resolved_broadcast', {
-            alertId,
-            resolvedByUsername: username,
-          });
-        }
       } catch (error) {
         console.error('Socket resolve_sos error:', error.message);
       }
@@ -178,13 +204,7 @@ const socketHandler = (io) => {
     // 8. Checkpoint Monitoring Trigger
     socket.on('checkpoint_trigger', async ({ tripId, userId, username, checkpointIndex, checkpointName, status }) => {
       try {
-        await CheckpointProgress.findOneAndUpdate(
-          { trip: tripId, user: userId, checkpointIndex },
-          { status, timestamp: new Date() },
-          { upsert: true, new: true }
-        );
-
-        // Notify group of Milestone achieved
+        // 1. Notify group of Milestone achieved instantly
         io.to(`trip_${tripId}`).emit('checkpoint_notification', {
           userId,
           username,
@@ -192,6 +212,16 @@ const socketHandler = (io) => {
           checkpointName,
           status, // 'reached', 'delayed', 'missed'
         });
+
+        // 2. Save to DB in background
+        CheckpointProgress.findOneAndUpdate(
+          { trip: tripId, user: userId, checkpointIndex },
+          { status, timestamp: new Date() },
+          { upsert: true, new: true }
+        ).catch((dbErr) => {
+          console.warn(`Checkpoint DB update deferred: ${dbErr.message}`);
+        });
+
       } catch (error) {
         console.error('Socket checkpoint_trigger error:', error.message);
       }
@@ -205,6 +235,8 @@ const socketHandler = (io) => {
     // 10. End Trip (Leader finishes ride)
     socket.on('end_trip', ({ tripId }) => {
       io.to(`trip_${tripId}`).emit('trip_closed', { tripId });
+      // Clear location cache for this trip
+      locationCache.delete(tripId);
     });
 
     // 11. Disconnect

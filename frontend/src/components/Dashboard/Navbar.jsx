@@ -28,12 +28,13 @@ const Navbar = ({ onCreateTripClick }) => {
       console.warn('Backend join failed or timed out, entering local fallback:', err.message);
       
       // Local fallback join constructs same mock coordinates path
-      const mockTripId = 'local_trip_' + Math.random().toString(36).substring(2, 9);
+      const cleanedCode = inviteCode.trim().toUpperCase();
+      const mockTripId = 'local_trip_' + cleanedCode;
       const mockJoinedTrip = {
         _id: mockTripId,
         name: 'Chai Break',
         description: 'SRM to Mahindra City Chennai GST road ride',
-        inviteCode: inviteCode.toUpperCase(),
+        inviteCode: cleanedCode,
         creator: { username: 'Group Leader' },
         status: 'active',
         route: {

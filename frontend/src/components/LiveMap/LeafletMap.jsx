@@ -166,12 +166,61 @@ const LeafletMap = () => {
   };
 
   useEffect(() => {
-    // Automatically prompt for location permission on mount so shared users instantly trigger it!
-    handleLocateMe();
+    // Proactively prompt and track real-time position using watchPosition!
+    let watchId = null;
+    if (navigator.geolocation) {
+      // 1. One-time prompt to request permission and center the map instantly
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentPosition([latitude, longitude]);
+          if (activeTrip) {
+            updateLocation(latitude, longitude, 0, battery);
+          }
+        },
+        (err) => {
+          console.warn('Initial GPS query failed:', err.message);
+          addNotification('Real-time GPS unavailable (HTTP block or denied). Use GPS Simulator below to test.', 'warning');
+        }
+      );
+
+      // 2. Setup high-accuracy continuous position watcher
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude, speed: gpsSpeed } = position.coords;
+          const coords = [latitude, longitude];
+          setCurrentPosition(coords);
+          
+          // Convert speed from m/s to km/h, default to 0 if not available
+          const speedKmH = gpsSpeed ? Math.round(gpsSpeed * 3.6) : 0;
+          setSpeed(speedKmH);
+          
+          if (activeTrip) {
+            updateLocation(latitude, longitude, speedKmH, battery);
+          }
+        },
+        (error) => {
+          console.warn('Geolocation tracking error:', error.message);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      );
+    } else {
+      addNotification('Geolocation is not supported by your browser.', 'error');
+    }
+
     return () => {
-      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (simIntervalRef.current) {
+        clearInterval(simIntervalRef.current);
+      }
     };
-  }, []);
+  }, [activeTrip]);
 
   useEffect(() => {
     if (activeTrip && currentPosition) {

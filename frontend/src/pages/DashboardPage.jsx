@@ -90,12 +90,13 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
     } catch (err) {
       console.warn('Backend failed or cold-starting, entering offline fallback mode:', err);
       // Client-side fallback: guarantees Launch Trip works instantly under all environments!
-      const mockTripId = 'local_trip_' + Math.random().toString(36).substring(2, 9);
+      const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const mockTripId = 'local_trip_' + inviteCode;
       const mockCreatedTrip = {
         _id: mockTripId,
         name: tripName,
         description: tripDesc,
-        inviteCode: 'LOCAL1',
+        inviteCode: inviteCode,
         creator: user || { username: 'Guest' },
         status: 'active',
         route: {
