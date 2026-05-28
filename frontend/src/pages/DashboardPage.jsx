@@ -24,10 +24,10 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
   const [profileSuccessMsg, setProfileSuccessMsg] = useState('');
 
   // Create Trip fields
-  const [tripName, setTripName] = useState('');
-  const [tripDesc, setTripDesc] = useState('');
-  const [startPoint, setStartPoint] = useState('San Francisco');
-  const [endPoint, setEndPoint] = useState('Sausalito Marina');
+  const [tripName, setTripName] = useState('Chai Break');
+  const [tripDesc, setTripDesc] = useState('GST Road Chennai travel coordination run');
+  const [startPoint, setStartPoint] = useState('Kattankulathur, Chennai');
+  const [endPoint, setEndPoint] = useState('Mahindra World City, Chennai');
   const [isCreatingTrip, setIsCreatingTrip] = useState(false);
 
   const handleProfileUpdate = async (e) => {
@@ -91,8 +91,8 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
         creator: user || { username: 'Guest' },
         status: 'active',
         route: {
-          startPoint: startPoint || 'San Francisco',
-          endPoint: endPoint || 'Sausalito Marina',
+          startPoint: startPoint || 'Kattankulathur, Chennai',
+          endPoint: endPoint || 'Mahindra World City, Chennai',
           polyline: MOCK_ROUTE_COORDINATES,
         },
         checkpoints: MOCK_CHECKPOINTS,
