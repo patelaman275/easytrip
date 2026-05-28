@@ -25,7 +25,6 @@ export const formatDistance = (distanceInKm) => {
 export const calculateETA = (distanceInKm, speedInKmh) => {
   if (distanceInKm <= 0) return 'Reached';
   if (!speedInKmh || speedInKmh < 5) {
-    // If stopped, assume a fallback speed of 30 km/h to calculate a hypothetical ETA
     const fallbackSpeed = 30;
     const timeInHours = distanceInKm / fallbackSpeed;
     const mins = Math.round(timeInHours * 60);
@@ -47,23 +46,20 @@ export const calculateETA = (distanceInKm, speedInKmh) => {
   return `${hours}h ${mins}m`;
 };
 
-// Generates a mock route (array of [lat, lng]) representing a beautiful ride
-// (e.g. around San Francisco's Golden Gate and Marin Headlands, or central park)
-// We will use Marin Headlands/Sausalito scenic loop!
+// Real Chennai Route: Kattankulathur (SRM) to Mahindra World City via NH-45 (GST Road)
 export const MOCK_ROUTE_COORDINATES = [
-  [37.7749, -122.4194], // San Francisco (Start)
-  [37.7925, -122.4382], // Marina District
-  [37.8086, -122.4744], // Presidio (Checkpoint 1)
-  [37.8199, -122.4783], // Golden Gate Bridge Midpoint
-  [37.8301, -122.4831], // Vista Point (Checkpoint 2)
-  [37.8398, -122.4965], // Marin Headlands Ridge
-  [37.8482, -122.4851], // Sausalito Scenic Road (Checkpoint 3)
-  [37.8591, -122.4812], // Sausalito Marina (End)
+  [12.8230, 80.0440], // Kattankulathur (SRM University Start)
+  [12.8222, 80.0381], // Potheri Junction
+  [12.8105, 80.0315], // Maraimalai Nagar Spot
+  [12.8015, 80.0245], // Thailavaram
+  [12.7930, 80.0160], // Singaperumal Koil
+  [12.7550, 80.0090], // Paranur GST Road Tollgate
+  [12.7380, 80.0050], // Mahindra World City Lake Canopy (End Destination)
 ];
 
 export const MOCK_CHECKPOINTS = [
-  { name: 'SF Presidio Gates', coords: { lat: 37.8086, lng: -122.4744 }, order: 1 },
-  { name: 'GGB Vista Point', coords: { lat: 37.8301, lng: -122.4831 }, order: 2 },
-  { name: 'Sausalito Scenic Road', coords: { lat: 37.8482, lng: -122.4851 }, order: 3 },
-  { name: 'Sausalito Marina End', coords: { lat: 37.8591, lng: -122.4812 }, order: 4 },
+  { name: 'SRM University Gate', coords: { lat: 12.8230, lng: 80.0440 }, order: 1 },
+  { name: 'Maraimalai Nagar Spot', coords: { lat: 12.8105, lng: 80.0315 }, order: 2 },
+  { name: 'Paranur Tollgate', coords: { lat: 12.7550, lng: 80.0090 }, order: 3 },
+  { name: 'Mahindra World City Canopy', coords: { lat: 12.7380, lng: 80.0050 }, order: 4 },
 ];

@@ -20,7 +20,7 @@ const LeafletMap = () => {
   const { user } = useAuth();
   const { activeTrip, ridersLocations, updateLocation, triggerSOS, triggerCheckpoint, addNotification } = useActiveTrip();
 
-  const [currentPosition, setCurrentPosition] = useState([37.7749, -122.4194]);
+  const [currentPosition, setCurrentPosition] = useState([12.8230, 80.0440]);
   const [speed, setSpeed] = useState(0);
   const [battery, setBattery] = useState(100);
   const [autoCenter, setAutoCenter] = useState(true);
