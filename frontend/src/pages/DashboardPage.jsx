@@ -30,6 +30,14 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
   const [endPoint, setEndPoint] = useState('Mahindra World City, Chennai');
   const [isCreatingTrip, setIsCreatingTrip] = useState(false);
 
+  const handleSetActiveTab = (tabId) => {
+    if (tabId === 'trip') {
+      onActiveRoomSelected();
+    } else {
+      setActiveTab(tabId);
+    }
+  };
+
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
     setIsUpdatingProfile(true);
@@ -118,7 +126,7 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
   return (
     <div className="flex h-screen bg-darkBg overflow-hidden font-sans">
       {/* Left Sidebar Navigation */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
 
       {/* Main Content Frame */}
       <div className="grow flex flex-col h-screen overflow-y-auto">
@@ -198,7 +206,7 @@ const DashboardPage = ({ onActiveRoomSelected }) => {
                         className="w-full pl-8 pr-3 py-2.5 rounded glass-input text-xs"
                         value={bikeModel}
                         onChange={(e) => setBikeModel(e.target.value)}
-                        placeholder="e.g. Specialized Tarmac SL8"
+                        placeholder="e.g. Yamaha Ray ZR"
                       />
                     </div>
                   </div>

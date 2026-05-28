@@ -81,7 +81,7 @@ const AuthPage = () => {
                 value={bikeModel}
                 onChange={(e) => setBikeModel(e.target.value)}
                 className="w-full pl-8 pr-3 py-2.5 rounded glass-input text-xs"
-                placeholder="e.g. Specialized Tarmac SL8"
+                placeholder="e.g. Yamaha Ray ZR"
               />
             </div>
           </div>

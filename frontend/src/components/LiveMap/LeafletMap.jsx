@@ -166,6 +166,8 @@ const LeafletMap = () => {
   };
 
   useEffect(() => {
+    // Automatically prompt for location permission on mount so shared users instantly trigger it!
+    handleLocateMe();
     return () => {
       if (simIntervalRef.current) clearInterval(simIntervalRef.current);
     };
