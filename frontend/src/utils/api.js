@@ -12,7 +12,7 @@ const api = axiosInstance.create({
 // Interceptor to automatically add JWT token to all requests
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('easytrip_token');
+    const token = sessionStorage.getItem('easytrip_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

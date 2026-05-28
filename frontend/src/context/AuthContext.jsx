@@ -5,7 +5,7 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('easytrip_token') || null);
+  const [token, setToken] = useState(sessionStorage.getItem('easytrip_token') || null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -48,7 +48,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     const userId = 'rider_' + Math.random().toString(36).substring(2, 9);
     const guestToken = `guest:${userId}:${username}:${bikeModel}:${experienceLevel}`;
-    localStorage.setItem('easytrip_token', guestToken);
+    sessionStorage.setItem('easytrip_token', guestToken);
     setToken(guestToken);
     setUser({
       id: userId,
@@ -71,7 +71,7 @@ export const AuthProvider = ({ children }) => {
       const res = await api.post('/auth/login', { emailOrUsername, password });
       const { token: receivedToken, user: receivedUser } = res.data;
 
-      localStorage.setItem('easytrip_token', receivedToken);
+      sessionStorage.setItem('easytrip_token', receivedToken);
       setToken(receivedToken);
       setUser(receivedUser);
       setLoading(false);
@@ -97,7 +97,7 @@ export const AuthProvider = ({ children }) => {
       });
       const { token: receivedToken, user: receivedUser } = res.data;
 
-      localStorage.setItem('easytrip_token', receivedToken);
+      sessionStorage.setItem('easytrip_token', receivedToken);
       setToken(receivedToken);
       setUser(receivedUser);
       setLoading(false);
@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('easytrip_token');
+    sessionStorage.removeItem('easytrip_token');
     setToken(null);
     setUser(null);
   };

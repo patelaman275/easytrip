@@ -8,7 +8,7 @@ import LeafletMap from '../components/LiveMap/LeafletMap';
 import ChatWindow from '../components/Chat/ChatWindow';
 import SOSButton from '../components/SOS/SOSButton';
 import CheckpointPanel from '../components/Checkpoint/CheckpointPanel';
-import { ArrowLeft, MessageSquare, Compass, ShieldAlert, Settings, Users, Trash2, Radio } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Compass, ShieldAlert, Settings, Users, Trash2, Radio, Share2 } from 'lucide-react';
 
 const TripRoomPage = ({ onExitRoom }) => {
   const { user } = useAuth();
@@ -37,7 +37,10 @@ const TripRoomPage = ({ onExitRoom }) => {
     onExitRoom();
   };
 
-  if (!activeTrip) return null;
+  const handleCopyInviteCode = () => {
+    navigator.clipboard.writeText(activeTrip.inviteCode);
+    addNotification(`Invite Code ${activeTrip.inviteCode} copied to clipboard!`, 'success');
+  };
 
   const isLeader = activeTrip.creator?._id === user?.id || activeTrip.creator === user?.id;
 
@@ -60,9 +63,18 @@ const TripRoomPage = ({ onExitRoom }) => {
             </button>
             <div>
               <h2 className="text-sm font-black text-white uppercase tracking-tight truncate max-w-xs">{activeTrip.name}</h2>
-              <span className="text-[10px] text-neutral-400 font-bold flex items-center gap-1 mt-0.5">
-                Invite Code: <span className="text-brandOrange font-black select-all tracking-wider">{activeTrip.inviteCode}</span>
-              </span>
+              <div className="flex items-center gap-2 mt-0.5 select-none">
+                <span className="text-[10px] text-neutral-400 font-bold">
+                  Invite Code: <span className="text-brandOrange font-black select-all tracking-wider">{activeTrip.inviteCode}</span>
+                </span>
+                <button
+                  onClick={handleCopyInviteCode}
+                  className="p-1 hover:bg-[#1c1c1e] text-neutral-400 hover:text-brandOrange rounded border border-[#2c2c2e] transition-all flex items-center justify-center shrink-0"
+                  title="Copy Invite Code"
+                >
+                  <Share2 size={12} />
+                </button>
+              </div>
             </div>
           </div>
 
