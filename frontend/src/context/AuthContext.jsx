@@ -13,18 +13,56 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initAuth = async () => {
       if (token) {
-        try {
-          const res = await api.get('/auth/profile');
-          setUser(res.data);
-        } catch (err) {
-          console.error('Session restore failed:', err.message);
-          logout();
+        if (token.startsWith('guest:')) {
+          const parts = token.split(':');
+          const userId = parts[1];
+          const username = parts[2];
+          const bikeModel = parts[3] || '';
+          const experienceLevel = parts[4] || 'Beginner';
+          setUser({
+            id: userId,
+            username,
+            riderDetails: {
+              bikeModel,
+              experienceLevel,
+              batteryPercentage: 100,
+              speed: 0,
+            },
+          });
+        } else {
+          try {
+            const res = await api.get('/auth/profile');
+            setUser(res.data);
+          } catch (err) {
+            console.error('Session restore failed:', err.message);
+            logout();
+          }
         }
       }
       setLoading(false);
     };
     initAuth();
   }, [token]);
+
+  const enterAsGuest = (username, bikeModel = '', experienceLevel = 'Beginner') => {
+    setLoading(true);
+    const userId = 'rider_' + Math.random().toString(36).substring(2, 9);
+    const guestToken = `guest:${userId}:${username}:${bikeModel}:${experienceLevel}`;
+    localStorage.setItem('easytrip_token', guestToken);
+    setToken(guestToken);
+    setUser({
+      id: userId,
+      username,
+      riderDetails: {
+        bikeModel,
+        experienceLevel,
+        batteryPercentage: 100,
+        speed: 0,
+      },
+    });
+    setLoading(false);
+    return true;
+  };
 
   const login = async (emailOrUsername, password) => {
     setLoading(true);
@@ -104,6 +142,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         updateProfile,
         setError,
+        enterAsGuest,
       }}
     >
       {children}
