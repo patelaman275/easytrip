@@ -50,7 +50,7 @@ io.on('connection', (socket) => {
   console.log('User connected to socket:', socket.id);
 
   // 1. Create Ride
-  socket.on('createRide', async ({ nickname, startLocation, vehicleModel, vehicleNumber, vehicleType, emergencyContact }) => {
+  socket.on('createRide', async ({ nickname, startLocation, vehicleModel, vehicleNumber, vehicleType, emergencyContact, avatar }) => {
     try {
       const codeNum = Math.floor(1000 + Math.random() * 9000);
       const rideCode = `RIDE-${codeNum}`;
@@ -68,6 +68,7 @@ io.on('connection', (socket) => {
           [socket.id]: {
             socketId: socket.id,
             nickname: nickname || 'Aman Patel',
+            avatar: avatar || '🏍️',
             vehicleModel: vehicleModel || 'Yamaha Ray ZR',
             vehicleNumber: vehicleNumber || 'UP32 AB 1234',
             vehicleType: vehicleType || 'Scooter',
@@ -104,7 +105,7 @@ io.on('connection', (socket) => {
   });
 
   // 2. Join Ride
-  socket.on('joinRide', async ({ rideCode, nickname, currentLocation, vehicleModel, vehicleNumber, vehicleType, emergencyContact }) => {
+  socket.on('joinRide', async ({ rideCode, nickname, currentLocation, vehicleModel, vehicleNumber, vehicleType, emergencyContact, avatar }) => {
     try {
       const code = rideCode.trim().toUpperCase();
       const ride = await ActiveRide.findOne({ code });
@@ -121,6 +122,7 @@ io.on('connection', (socket) => {
       ride.riders.set(socket.id, {
         socketId: socket.id,
         nickname: nickname || 'Aman Patel',
+        avatar: avatar || '🏍️',
         vehicleModel: vehicleModel || 'Yamaha Ray ZR',
         vehicleNumber: vehicleNumber || 'UP32 AB 1234',
         vehicleType: vehicleType || 'Scooter',
@@ -135,7 +137,7 @@ io.on('connection', (socket) => {
 
       await ride.save();
       socket.join(code);
-      console.log(`User ${nickname} joined ride room: ${code}`);
+      console.log(`User ${nickname || 'Aman Patel'} joined ride room: ${code}`);
 
       // Confirm join back to user
       socket.emit('rideJoined', {
@@ -151,7 +153,7 @@ io.on('connection', (socket) => {
 
       // Broadcast updated list of riders to everyone in the room
       io.to(code).emit('riderJoined', {
-        nickname: nickname,
+        nickname: nickname || 'Aman Patel',
         riders: Array.from(ride.riders.values()),
       });
     } catch (err) {
@@ -225,17 +227,21 @@ io.on('connection', (socket) => {
   });
 
   // 5. Update/Sync Destination and Route polylines
-  socket.on('updateRoute', async ({ rideCode, destination, route }) => {
+  socket.on('updateRoute', async ({ rideCode, destination, route, checkpoints }) => {
     try {
       const code = rideCode.toUpperCase();
+      const updatePayload = { destination, route };
+      if (checkpoints !== undefined) {
+        updatePayload.checkpoints = checkpoints;
+      }
       const updatedRide = await ActiveRide.findOneAndUpdate(
         { code },
-        { $set: { destination, route } },
+        { $set: updatePayload },
         { new: true }
       );
       if (updatedRide) {
         console.log(`Destination route synced to DB for ${code}`);
-        io.to(code).emit('routeSynced', { destination, route });
+        io.to(code).emit('routeSynced', { destination, route, checkpoints: updatedRide.checkpoints });
       }
     } catch (err) {
       console.error('Failed to sync route in DB:', err.message);

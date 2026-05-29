@@ -61,17 +61,19 @@ const MapClickHandler = ({ onClick }) => {
 function App() {
   // Authentication & Entrance (Yamaha Ray ZR preset default)
   const [nickname, setNickname] = useState(() => sessionStorage.getItem('easytrip_nickname') || '');
+  const [avatar, setAvatar] = useState(() => sessionStorage.getItem('easytrip_avatar') || '🏍️');
   const [vehicleModel, setVehicleModel] = useState(() => sessionStorage.getItem('easytrip_vehicle_model') || '');
   const [vehicleNumber, setVehicleNumber] = useState(() => sessionStorage.getItem('easytrip_vehicle_number') || '');
   const [vehicleType, setVehicleType] = useState(() => sessionStorage.getItem('easytrip_vehicle_type') || 'Scooter');
   const [emergencyContact, setEmergencyContact] = useState(() => sessionStorage.getItem('easytrip_emergency_contact') || '');
 
-  // Prepopulate exactly to frictionless launch with Yamaha Ray ZR Scooter
-  const [tempNickname, setTempNickname] = useState('Aman Patel');
-  const [tempVehicleModel, setTempVehicleModel] = useState('Yamaha Ray ZR');
-  const [tempVehicleNumber, setTempVehicleNumber] = useState('UP32 AB 1234');
+  // Initial lobby fill spaces are empty strings as requested, showing beautiful placeholders
+  const [tempNickname, setTempNickname] = useState('');
+  const [tempAvatar, setTempAvatar] = useState('🏍️');
+  const [tempVehicleModel, setTempVehicleModel] = useState('');
+  const [tempVehicleNumber, setTempVehicleNumber] = useState('');
   const [tempVehicleType, setTempVehicleType] = useState('Scooter');
-  const [tempEmergencyContact, setTempEmergencyContact] = useState('+91 98765 43210');
+  const [tempEmergencyContact, setTempEmergencyContact] = useState('');
 
   const [isJoined, setIsJoined] = useState(false);
   const [rideCode, setRideCode] = useState('');
@@ -209,6 +211,7 @@ function App() {
       console.log('Connected to server socket:', socketRef.current.id);
       
       const savedNickname = sessionStorage.getItem('easytrip_nickname');
+      const savedAvatar = sessionStorage.getItem('easytrip_avatar') || '🏍️';
       const savedVehicleModel = sessionStorage.getItem('easytrip_vehicle_model');
       const savedVehicleNumber = sessionStorage.getItem('easytrip_vehicle_number');
       const savedVehicleType = sessionStorage.getItem('easytrip_vehicle_type') || 'Scooter';
@@ -218,6 +221,7 @@ function App() {
         socketRef.current.emit('joinRide', {
           rideCode: pendingJoinCodeRef.current.toUpperCase(),
           nickname: savedNickname,
+          avatar: savedAvatar,
           currentLocation: currentPosition,
           vehicleModel: savedVehicleModel,
           vehicleNumber: savedVehicleNumber,
@@ -285,9 +289,12 @@ function App() {
       speakVoiceInstruction('Last checkpoint removed');
     });
 
-    socketRef.current.on('routeSynced', ({ destination, route }) => {
+    socketRef.current.on('routeSynced', ({ destination, route, checkpoints }) => {
       setDestination(destination);
       setRoute(route);
+      if (checkpoints !== undefined) {
+        setCheckpoints(checkpoints);
+      }
       addSystemLog('Leader synchronized destination path.');
       triggerNotification('🗺️ Route updated by Group Leader.');
     });
@@ -666,18 +673,21 @@ function App() {
     if (!tempNickname.trim()) return;
 
     const trimmedNickname = tempNickname.trim();
+    const trimmedAvatar = tempAvatar;
     const trimmedModel = tempVehicleModel.trim() || 'N/A';
     const trimmedNumber = tempVehicleNumber.trim() || 'N/A';
     const trimmedType = tempVehicleType;
     const trimmedContact = tempEmergencyContact.trim();
 
     sessionStorage.setItem('easytrip_nickname', trimmedNickname);
+    sessionStorage.setItem('easytrip_avatar', trimmedAvatar);
     sessionStorage.setItem('easytrip_vehicle_model', trimmedModel);
     sessionStorage.setItem('easytrip_vehicle_number', trimmedNumber);
     sessionStorage.setItem('easytrip_vehicle_type', trimmedType);
     sessionStorage.setItem('easytrip_emergency_contact', trimmedContact);
 
     setNickname(trimmedNickname);
+    setAvatar(trimmedAvatar);
     setVehicleModel(trimmedModel);
     setVehicleNumber(trimmedNumber);
     setVehicleType(trimmedType);
@@ -687,6 +697,7 @@ function App() {
       socketRef.current.emit('joinRide', {
         rideCode: pendingJoinCodeRef.current.toUpperCase(),
         nickname: trimmedNickname,
+        avatar: trimmedAvatar,
         currentLocation: currentPosition,
         vehicleModel: trimmedModel,
         vehicleNumber: trimmedNumber,
@@ -702,6 +713,7 @@ function App() {
     if (!nickname || !socketRef.current) return;
     socketRef.current.emit('createRide', {
       nickname,
+      avatar,
       startLocation: currentPosition,
       vehicleModel,
       vehicleNumber,
@@ -717,6 +729,7 @@ function App() {
     socketRef.current.emit('joinRide', {
       rideCode: joinCodeInput.trim().toUpperCase(),
       nickname,
+      avatar,
       currentLocation: currentPosition,
       vehicleModel,
       vehicleNumber,
@@ -850,9 +863,35 @@ function App() {
       rideCode,
       destination,
       route: roadRoute,
+      checkpoints: updatedCPs,
     });
     
     addSystemLog(`Removed checkpoint: ${popped.name}`);
+  };
+
+  const handleDeleteCheckpoint = async (cpOrder) => {
+    if (!isCreator || !rideCode) return;
+
+    const filteredCPs = checkpoints.filter((cp) => cp.order !== cpOrder);
+    const updatedCPs = filteredCPs.map((cp, idx) => ({
+      ...cp,
+      order: idx + 1,
+    }));
+
+    triggerNotification('Re-routing remaining checkpoints...');
+    setCheckpoints(updatedCPs);
+
+    const roadRoute = await fetchRoadRoute(currentPosition, destination, updatedCPs);
+    setRoute(roadRoute);
+
+    socketRef.current.emit('updateRoute', {
+      rideCode,
+      destination,
+      route: roadRoute,
+      checkpoints: updatedCPs,
+    });
+
+    addSystemLog(`Deleted Checkpoint Stop #${cpOrder}`);
   };
 
   const handleClearRoute = () => {
@@ -1039,15 +1078,15 @@ function App() {
   }, [isJoined, weatherData, showWeatherOnRoute]);
 
   // Leaflet Marker Icons builders
-  const createRiderIcon = (color, isMe = false, isSOS = false) => {
+  const createRiderIcon = (color, isMe = false, isSOS = false, riderAvatar = '🏍️') => {
     return L.divIcon({
       className: 'rider-custom-marker',
       html: `
         <div class="relative flex flex-col items-center">
           <div class="w-8 h-8 rounded-full border-2 ${
             isMe ? 'border-white animate-pulse-orange' : 'border-neutral-800'
-          } flex items-center justify-center shadow-lg relative transition-all duration-500" style="background-color: ${color}">
-            <div class="w-2.5 h-2.5 rounded-full bg-white"></div>
+          } flex items-center justify-center shadow-lg relative transition-all duration-500 text-xs" style="background-color: ${color}">
+            <span class="text-xs font-black select-none">${riderAvatar}</span>
             ${
               isSOS 
                 ? `<div class="absolute inset-0 rounded-full border-4 border-red-500 animate-ping"></div>` 
@@ -1215,6 +1254,35 @@ function App() {
               />
             </div>
 
+            <div>
+              <label className="block text-neutral-400 text-[8px] font-black uppercase tracking-widest mb-1.5">
+                SELECT PILOT AVATAR
+              </label>
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { char: '🏍️', label: 'Rider' },
+                  { char: '⚡', label: 'Storm' },
+                  { char: '💀', label: 'Ghost' },
+                  { char: '🐯', label: 'Tiger' },
+                  { char: '👑', label: 'Apex' }
+                ].map((av) => (
+                  <button
+                    key={av.char}
+                    type="button"
+                    onClick={() => setTempAvatar(av.char)}
+                    className={`py-2 rounded-lg border transition-all text-lg flex items-center justify-center ${
+                      tempAvatar === av.char
+                        ? 'bg-brandOrange/25 border-brandOrange text-white shadow shadow-brandOrange/25'
+                        : 'bg-[#111218] border-[#1f2029] text-neutral-500 hover:border-brandOrange/35 hover:text-white'
+                    }`}
+                    title={av.label}
+                  >
+                    {av.char}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={!tempNickname.trim() || !tempVehicleModel.trim() || !tempVehicleNumber.trim()}
@@ -1351,16 +1419,27 @@ function App() {
               {checkpoints.map((cp) => {
                 const reached = reachedCheckpointsRef.current.has(cp.order);
                 return (
-                  <div key={cp.order} className="relative flex items-center gap-2">
-                    <div className={`absolute -left-[18.5px] w-2.5 h-2.5 rounded-full border border-neutral-900 ${
-                      reached ? 'bg-brandOrange animate-pulse-orange' : 'bg-neutral-800'
-                    }`}></div>
-                    <div className="flex flex-col text-[9px] uppercase font-bold tracking-wide">
-                      <span className={reached ? 'text-brandOrange font-black animate-pulse' : 'text-neutral-400'}>
-                        {getCheckpointEmoji(cp.name)} {cp.name}
-                      </span>
-                      <span className="text-neutral-500">Stop #{cp.order}</span>
+                  <div key={cp.order} className="relative flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`absolute -left-[18.5px] w-2.5 h-2.5 rounded-full border border-neutral-900 ${
+                        reached ? 'bg-brandOrange animate-pulse-orange' : 'bg-neutral-800'
+                      }`}></div>
+                      <div className="flex flex-col text-[9px] uppercase font-bold tracking-wide">
+                        <span className={reached ? 'text-brandOrange font-black animate-pulse' : 'text-neutral-400'}>
+                          {getCheckpointEmoji(cp.name)} {cp.name}
+                        </span>
+                        <span className="text-neutral-500">Stop #{cp.order}</span>
+                      </div>
                     </div>
+                    {isCreator && (
+                      <button
+                        onClick={() => handleDeleteCheckpoint(cp.order)}
+                        className="text-red-500 hover:text-red-400 font-extrabold text-[9px] px-1 hover:bg-[#1a1c23] rounded shrink-0 transition-all"
+                        title="Delete Checkpoint"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -1423,7 +1502,7 @@ function App() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 truncate">
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.isSOS ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`}></span>
-                        <span className="text-white font-extrabold text-[11px] truncate uppercase tracking-wide">{r.nickname}</span>
+                        <span className="text-white font-extrabold text-[11px] truncate uppercase tracking-wide">{r.avatar || '🏍️'} {r.nickname}</span>
                         {isMe && <span className="text-[7px] bg-brandOrange/25 text-brandOrange px-1 py-0.5 rounded font-black shrink-0">ME</span>}
                         {r.socketId === creatorId && <span className="text-[7px] bg-[#00f0ff]/15 text-[#00f0ff] border border-[#00f0ff]/20 px-1 py-0.5 rounded font-black shrink-0">LDR</span>}
                       </div>
@@ -1455,8 +1534,8 @@ function App() {
 
         {/* Profile Card Bottom Badge */}
         <div className="mt-auto pt-3 border-t border-[#1a1c23] flex items-center gap-3 shrink-0 select-none">
-          <div className="w-8 h-8 rounded-full bg-brandOrange flex items-center justify-center font-black text-white uppercase text-xs">
-            {nickname.substring(0, 2)}
+          <div className="w-8 h-8 rounded-full bg-brandOrange/15 border border-brandOrange/35 flex items-center justify-center font-black text-white text-md">
+            {avatar}
           </div>
           <div className="flex flex-col truncate max-w-[180px]">
             <span className="text-xs font-black text-white uppercase tracking-wider truncate">{nickname}</span>
@@ -1774,6 +1853,27 @@ function App() {
 
           {/* FLOATING ACTIONS CONTROL DECK OVER MAP */}
           <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 shadow-2xl">
+            {/* SOS BUTTON - HIGHLY PROMINENT AT TOP LEFT OF THE DECK */}
+            <button
+              onClick={() => {
+                if (!isJoined) {
+                  triggerNotification('You must create or join a group ride room to broadcast an SOS alert!');
+                  playAlertSound();
+                  return;
+                }
+                handleToggleSOS();
+              }}
+              className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center font-black tracking-widest text-[8px] uppercase border transition-all duration-300 ${
+                isJoined && riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS
+                  ? 'bg-red-600 border-2 border-white text-white animate-pulse shadow-red-500/50 shadow-lg'
+                  : 'bg-[#121212] border border-red-500/50 text-red-500 hover:bg-red-950/20 hover:border-red-500 shadow'
+              }`}
+              title="Trigger SOS Distress Alert"
+            >
+              <ShieldAlert size={15} className={isJoined && riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS ? 'animate-bounce' : ''} />
+              <span className="text-[6.5px] mt-0.5 font-black leading-none">SOS</span>
+            </button>
+
             <button
               onClick={() => setAutoCenter((prev) => !prev)}
               className={`p-2.5 rounded-lg border transition-all ${
@@ -1979,26 +2079,7 @@ function App() {
             </div>
           )}
 
-          {/* DEDICATED LARGE FLOATING SOS BUTTON OVERMAP */}
-          <button
-            onClick={() => {
-              if (!isJoined) {
-                triggerNotification('You must create or join a group ride room to broadcast an SOS alert!');
-                playAlertSound();
-                return;
-              }
-              handleToggleSOS();
-            }}
-            className={`absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full flex flex-col items-center justify-center font-black tracking-widest text-[9px] uppercase shadow-2xl transition-all duration-300 ${
-              isJoined && riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS
-                ? 'bg-red-600 border-2 border-white text-white animate-pulse shadow-red-500/50 shadow-lg'
-                : 'bg-[#121212] border-2 border-red-500/50 text-red-500 hover:bg-red-950/20 hover:border-red-500 shadow'
-            }`}
-            title="Trigger SOS Distress Alert"
-          >
-            <ShieldAlert size={20} className={isJoined && riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS ? 'animate-bounce' : ''} />
-            <span className="text-[7.5px] mt-0.5 font-black">SOS</span>
-          </button>
+
         </div>
       </div>
 

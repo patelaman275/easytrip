@@ -32,6 +32,7 @@ const ActiveRideSchema = new mongoose.Schema({
     of: {
       socketId: { type: String, required: true },
       nickname: { type: String, required: true },
+      avatar: { type: String, default: '🏍️' },
       vehicleModel: { type: String, default: 'N/A' },
       vehicleNumber: { type: String, default: 'N/A' },
       vehicleType: { type: String, default: 'Motorcycle' },
