@@ -67,11 +67,11 @@ io.on('connection', (socket) => {
         riders: {
           [socket.id]: {
             socketId: socket.id,
-            nickname: nickname || 'Creator',
-            vehicleModel: vehicleModel || 'N/A',
-            vehicleNumber: vehicleNumber || 'N/A',
-            vehicleType: vehicleType || 'Motorcycle',
-            emergencyContact: emergencyContact || '',
+            nickname: nickname || 'Aman Patel',
+            vehicleModel: vehicleModel || 'Yamaha Ray ZR',
+            vehicleNumber: vehicleNumber || 'UP32 AB 1234',
+            vehicleType: vehicleType || 'Scooter',
+            emergencyContact: emergencyContact || '+91 98765 43210',
             lat: startLocation.lat,
             lng: startLocation.lng,
             isSOS: false,
@@ -84,7 +84,7 @@ io.on('connection', (socket) => {
 
       await newRide.save();
       socket.join(rideCode);
-      console.log(`Ride ${rideCode} created by ${nickname} in MongoDB Atlas`);
+      console.log(`Ride ${rideCode} created by ${nickname || 'Aman Patel'} in MongoDB Atlas`);
 
       // Emit creation confirmation back to creator
       socket.emit('rideCreated', {
@@ -120,11 +120,11 @@ io.on('connection', (socket) => {
       // Push joined participant into Map schema
       ride.riders.set(socket.id, {
         socketId: socket.id,
-        nickname: nickname || `Rider-${Math.floor(100 + Math.random() * 900)}`,
-        vehicleModel: vehicleModel || 'N/A',
-        vehicleNumber: vehicleNumber || 'N/A',
-        vehicleType: vehicleType || 'Motorcycle',
-        emergencyContact: emergencyContact || '',
+        nickname: nickname || 'Aman Patel',
+        vehicleModel: vehicleModel || 'Yamaha Ray ZR',
+        vehicleNumber: vehicleNumber || 'UP32 AB 1234',
+        vehicleType: vehicleType || 'Scooter',
+        emergencyContact: emergencyContact || '+91 98765 43210',
         lat: currentLocation?.lat || 12.8230,
         lng: currentLocation?.lng || 80.0440,
         isSOS: false,

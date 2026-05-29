@@ -59,18 +59,19 @@ const MapClickHandler = ({ onClick }) => {
 };
 
 function App() {
-  // Authentication & Entrance
+  // Authentication & Entrance (Yamaha Ray ZR preset default)
   const [nickname, setNickname] = useState(() => sessionStorage.getItem('easytrip_nickname') || '');
   const [vehicleModel, setVehicleModel] = useState(() => sessionStorage.getItem('easytrip_vehicle_model') || '');
   const [vehicleNumber, setVehicleNumber] = useState(() => sessionStorage.getItem('easytrip_vehicle_number') || '');
-  const [vehicleType, setVehicleType] = useState(() => sessionStorage.getItem('easytrip_vehicle_type') || 'Motorcycle');
+  const [vehicleType, setVehicleType] = useState(() => sessionStorage.getItem('easytrip_vehicle_type') || 'Scooter');
   const [emergencyContact, setEmergencyContact] = useState(() => sessionStorage.getItem('easytrip_emergency_contact') || '');
 
-  const [tempNickname, setTempNickname] = useState('');
-  const [tempVehicleModel, setTempVehicleModel] = useState('');
-  const [tempVehicleNumber, setTempVehicleNumber] = useState('');
-  const [tempVehicleType, setTempVehicleType] = useState('Motorcycle');
-  const [tempEmergencyContact, setTempEmergencyContact] = useState('');
+  // Prepopulate exactly to frictionless launch with Yamaha Ray ZR Scooter
+  const [tempNickname, setTempNickname] = useState('Aman Patel');
+  const [tempVehicleModel, setTempVehicleModel] = useState('Yamaha Ray ZR');
+  const [tempVehicleNumber, setTempVehicleNumber] = useState('UP32 AB 1234');
+  const [tempVehicleType, setTempVehicleType] = useState('Scooter');
+  const [tempEmergencyContact, setTempEmergencyContact] = useState('+91 98765 43210');
 
   const [isJoined, setIsJoined] = useState(false);
   const [rideCode, setRideCode] = useState('');
@@ -151,12 +152,16 @@ function App() {
   const [replaySpeedMultiplier, setReplaySpeedMultiplier] = useState(1);
   const [replayCurrentIndex, setReplayCurrentIndex] = useState(0);
 
+  // Chat announcement switch toggle
+  const [isAnnouncementMode, setIsAnnouncementMode] = useState(false);
+
   // Socket & Refs
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
   const pendingJoinCodeRef = useRef(new URLSearchParams(window.location.search).get('join'));
   const reachedCheckpointsRef = useRef(new Set());
   const lastSpokenGeofenceRef = useRef({}); // socketId -> timestamp
+  const spokenThresholdsRef = useRef(new Map()); // stepIndex -> Set of spoken thresholds
 
   // Scroll to bottom of chat
   const scrollToBottom = () => {
@@ -206,7 +211,7 @@ function App() {
       const savedNickname = sessionStorage.getItem('easytrip_nickname');
       const savedVehicleModel = sessionStorage.getItem('easytrip_vehicle_model');
       const savedVehicleNumber = sessionStorage.getItem('easytrip_vehicle_number');
-      const savedVehicleType = sessionStorage.getItem('easytrip_vehicle_type') || 'Motorcycle';
+      const savedVehicleType = sessionStorage.getItem('easytrip_vehicle_type') || 'Scooter';
       const savedEmergencyContact = sessionStorage.getItem('easytrip_emergency_contact');
 
       if (savedNickname && pendingJoinCodeRef.current) {
@@ -519,7 +524,7 @@ function App() {
 
     const currentStep = routeSteps[closestStepIdx];
     if (currentStep) {
-      const distToTurn = calculateDistance(currentPosition.lat, currentPosition.lng, currentStep.lat, currentStep.lng) * 1000;
+      const distToTurn = calculateDistance(currentPosition.lat, currentPosition.lng, currentStep.lat, currentStep.lng) * 1000; // meters
       const readableInstruction = getInstructionText(currentStep);
       
       setNextManeuver({
@@ -529,12 +534,34 @@ function App() {
         modifier: currentStep.modifier
       });
 
-      if (distToTurn < 60 && closestStepIdx !== lastSpokenStepIndex) {
-        speakVoiceInstruction(`In 50 meters, ${readableInstruction}`);
+      if (!spokenThresholdsRef.current.has(closestStepIdx)) {
+        spokenThresholdsRef.current.set(closestStepIdx, new Set());
+      }
+      const spokenSet = spokenThresholdsRef.current.get(closestStepIdx);
+
+      // Multi-threshold standard GPS announcement system
+      if (distToTurn <= 200 && distToTurn > 60 && !spokenSet.has('200')) {
+        const roundedD = Math.round(distToTurn / 10) * 10;
+        speakVoiceInstruction(`In ${roundedD} meters, ${readableInstruction}`);
+        spokenSet.add('200');
+      } else if (distToTurn <= 60 && distToTurn > 20 && !spokenSet.has('60')) {
+        const roundedD = Math.round(distToTurn / 5) * 5;
+        speakVoiceInstruction(`In ${roundedD} meters, ${readableInstruction}`);
+        spokenSet.add('200');
+        spokenSet.add('60');
+      } else if (distToTurn <= 20 && !spokenSet.has('20')) {
+        if (currentStep.type === 'arrive') {
+          speakVoiceInstruction('You have arrived at your destination');
+        } else {
+          speakVoiceInstruction(`${readableInstruction} now`);
+        }
+        spokenSet.add('200');
+        spokenSet.add('60');
+        spokenSet.add('20');
         setLastSpokenStepIndex(closestStepIdx);
       }
     }
-  }, [currentPosition, routeSteps, lastSpokenStepIndex, isJoined, isReplayMode]);
+  }, [currentPosition, routeSteps, isJoined, isReplayMode]);
 
   // 3.6. Checkpoint milestones reached detector
   useEffect(() => {
@@ -869,6 +896,16 @@ function App() {
       message: chatInput.trim(),
       msgId,
     });
+
+    // If announcement mode is selected (and user is creator), ALSO trigger voice announcement & popup overlays
+    if (isAnnouncementMode && isCreator) {
+      socketRef.current.emit('sendAnnouncement', {
+        rideCode,
+        nickname,
+        announcement: chatInput.trim()
+      });
+    }
+
     setChatInput('');
   };
 
@@ -1083,7 +1120,7 @@ function App() {
     });
   };
 
-  // Entrance UI Overlay if callsign has not been created
+  // Entrance UI Overlay if callsign has not been created (Default Yamaha Ray ZR preset)
   if (!nickname) {
     return (
       <div className="min-h-screen bg-[#07080c] flex flex-col items-center justify-center p-4 font-sans select-none relative">
@@ -1126,8 +1163,8 @@ function App() {
                   onChange={(e) => setTempVehicleType(e.target.value)}
                   className="w-full py-2 px-3 bg-[#111218] border border-[#1f2029] rounded focus:border-brandOrange text-xs font-bold uppercase text-white focus:outline-none"
                 >
-                  <option value="Motorcycle">Motorcycle</option>
                   <option value="Scooter">Scooter</option>
+                  <option value="Motorcycle">Motorcycle</option>
                   <option value="Car">Car</option>
                   <option value="Bicycle">Bicycle</option>
                 </select>
@@ -1157,7 +1194,7 @@ function App() {
                 type="text"
                 value={tempVehicleModel}
                 onChange={(e) => setTempVehicleModel(e.target.value)}
-                placeholder="e.g. Royal Enfield Hunter 350"
+                placeholder="e.g. Yamaha Ray ZR"
                 required
                 maxLength={30}
                 className="w-full py-2 px-3 bg-[#111218] border border-[#1f2029] rounded focus:border-brandOrange text-xs font-bold uppercase tracking-wider text-white placeholder-neutral-700 focus:outline-none"
@@ -1405,7 +1442,7 @@ function App() {
                     </div>
 
                     {r.isSOS && (
-                      <span className="text-[7.5px] bg-red-955/80 border border-red-500/20 text-red-500 font-black px-1 py-0.5 rounded text-center animate-pulse">
+                      <span className="text-[7.5px] bg-red-950/80 border border-red-500/20 text-red-500 font-black px-1 py-0.5 rounded text-center animate-pulse">
                         🚨 EMERGENCY: ACTIVE SOS DISTRESS
                       </span>
                     )}
@@ -1631,7 +1668,7 @@ function App() {
                           socketRef.current.emit('removeHazard', { rideCode, hazardId: haz.id });
                           triggerNotification('Removing hazard flag...');
                         }}
-                        className="w-full mt-2 py-1 bg-red-950/80 border border-red-500/20 text-red-500 text-[8px] font-black uppercase tracking-widest rounded transition-all"
+                        className="w-full mt-2 py-1 bg-red-950 border border-red-500/20 text-red-500 text-[8px] font-black uppercase tracking-widest rounded transition-all"
                       >
                         Clear Hazard
                       </button>
@@ -1659,7 +1696,7 @@ function App() {
                         ) : (
                           <span className={`text-[8px] px-1.5 rounded uppercase font-black border ${
                             loc.isSOS 
-                              ? 'bg-red-955 border-red-500/30 text-red-500 animate-pulse' 
+                              ? 'bg-red-950 border-red-500/30 text-red-500 animate-pulse' 
                               : 'bg-emerald-950/80 border-emerald-500/30 text-emerald-400'
                           }`}>
                             {loc.isSOS ? 'SOS' : 'Active'}
@@ -1911,7 +1948,7 @@ function App() {
 
           {/* FLOATING ACTION BOTTOM DECKS: Quick Actions Pings & Alerts */}
           {isJoined && !isReplayMode && (
-            <div className="absolute bottom-6 left-4 right-4 md:left-auto md:right-6 z-20 flex items-center justify-between md:justify-end gap-2.5 select-none">
+            <div className="absolute bottom-6 left-4 right-24 z-20 flex items-center justify-between md:justify-end gap-2.5 select-none">
               {/* Quick status alerts deck */}
               <div className="flex border border-[#1a1c23] bg-[#0b0c10]/95 p-1 rounded-lg shadow-2xl divide-x divide-[#1a1c23] select-none text-[8.5px] font-black uppercase tracking-wider backdrop-blur">
                 <button
@@ -1939,21 +1976,29 @@ function App() {
                   🚨 Danger
                 </button>
               </div>
-
-              {/* SOS Emergency button */}
-              <button
-                onClick={handleToggleSOS}
-                className={`py-2 px-3.5 rounded-lg font-black text-[9.5px] tracking-widest uppercase transition-all shadow-xl flex items-center gap-1.5 shrink-0 ${
-                  riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS
-                    ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-red-500/10 shadow-lg'
-                    : 'bg-red-600/15 hover:bg-red-600/25 border border-red-500/25 text-red-500 shadow'
-                }`}
-              >
-                <ShieldAlert size={13} />
-                <span>{riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS ? 'Deactivate SOS' : 'SOS distress'}</span>
-              </button>
             </div>
           )}
+
+          {/* DEDICATED LARGE FLOATING SOS BUTTON OVERMAP */}
+          <button
+            onClick={() => {
+              if (!isJoined) {
+                triggerNotification('You must create or join a group ride room to broadcast an SOS alert!');
+                playAlertSound();
+                return;
+              }
+              handleToggleSOS();
+            }}
+            className={`absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full flex flex-col items-center justify-center font-black tracking-widest text-[9px] uppercase shadow-2xl transition-all duration-300 ${
+              isJoined && riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS
+                ? 'bg-red-600 border-2 border-white text-white animate-pulse shadow-red-500/50 shadow-lg'
+                : 'bg-[#121212] border-2 border-red-500/50 text-red-500 hover:bg-red-950/20 hover:border-red-500 shadow'
+            }`}
+            title="Trigger SOS Distress Alert"
+          >
+            <ShieldAlert size={20} className={isJoined && riders.find((r) => r.socketId === socketRef.current?.id)?.isSOS ? 'animate-bounce' : ''} />
+            <span className="text-[7.5px] mt-0.5 font-black">SOS</span>
+          </button>
         </div>
       </div>
 
@@ -2027,7 +2072,7 @@ function App() {
                         className={`p-2.5 rounded-lg text-xs ${
                           isMe
                             ? 'bg-brandOrange text-white rounded-tr-none font-semibold shadow shadow-brandOrange/20'
-                            : 'bg-[#1c1c1e] text-neutral-255 border border-[#2c2c2e] rounded-tl-none font-medium'
+                            : 'bg-[#1c1c1e] text-neutral-200 border border-[#2c2c2e] rounded-tl-none font-medium'
                         }`}
                       >
                         {msg.message}
@@ -2042,11 +2087,21 @@ function App() {
 
             {/* Input Submission bar */}
             {isJoined && (
-              <form onSubmit={isCreator ? handleSendAnnouncement : handleSendChat} className="mt-auto flex flex-col gap-2 shrink-0">
+              <form onSubmit={handleSendChat} className="mt-auto flex flex-col gap-2 shrink-0">
                 {isCreator && (
-                  <div className="flex justify-between items-center px-1 text-[7.5px] font-black uppercase text-brandOrange tracking-widest">
-                    <span>Announcement Mode</span>
-                    <span>Broadcasting enabled</span>
+                  <div className="flex justify-between items-center px-1 text-[7.5px] font-black uppercase tracking-widest">
+                    <span className={isAnnouncementMode ? 'text-brandOrange' : 'text-neutral-500'}>
+                      {isAnnouncementMode ? '📢 Announcement Mode Active' : '💬 Chat Mode'}
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={isAnnouncementMode}
+                        onChange={(e) => setIsAnnouncementMode(e.target.checked)}
+                        className="rounded border-neutral-800 bg-[#111218] text-brandOrange focus:ring-0 w-3 h-3 cursor-pointer"
+                      />
+                      <span className="text-neutral-400 hover:text-white transition-all text-[7px]">LOUD BROADCAST</span>
+                    </label>
                   </div>
                 )}
                 <div className="flex items-center gap-2 w-full">
@@ -2054,7 +2109,7 @@ function App() {
                     type="text"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    placeholder={isCreator ? "BROADCAST ANNOUNCEMENT..." : "SEND MESSAGE..."}
+                    placeholder={isAnnouncementMode ? "BROADCAST ANNOUNCEMENT..." : "SEND MESSAGE..."}
                     required
                     className="grow py-2 px-3 rounded-lg bg-[#111218] border border-[#1f2029] text-xs text-white placeholder-neutral-700 focus:border-brandOrange focus:outline-none"
                   />
@@ -2083,7 +2138,7 @@ function App() {
               <div className="space-y-2.5 select-text">
                 {systemLogs.map((log, idx) => (
                   <div key={idx} className="p-2.5 rounded-lg border border-white/[0.04] bg-[#0c0d12] flex flex-col gap-1">
-                    <span className="text-[9px] text-neutral-250 font-extrabold tracking-wide uppercase leading-relaxed">{log.text}</span>
+                    <span className="text-[9px] text-neutral-300 font-extrabold tracking-wide uppercase leading-relaxed">{log.text}</span>
                     <span className="text-[7.5px] text-neutral-500 font-black self-end">{log.time}</span>
                   </div>
                 ))}
@@ -2138,7 +2193,7 @@ function App() {
 
       {/* FULL SCREEN EMERGENCY SOS BROADCAST OVERLAY */}
       {activeSOS && (
-        <div className="absolute inset-0 bg-red-955/90 z-40 flex flex-col items-center justify-center p-6 select-none animate-pulse-red">
+        <div className="absolute inset-0 bg-red-950/90 z-40 flex flex-col items-center justify-center p-6 select-none animate-pulse-red">
           <div className="w-14 h-14 rounded-full bg-red-600 border border-white flex items-center justify-center text-white mb-4 animate-bounce shadow-2xl">
             <ShieldAlert size={28} />
           </div>
@@ -2200,7 +2255,7 @@ function App() {
                     key={haz.type}
                     type="button"
                     onClick={() => handleAddHazard(haz.type)}
-                    className="py-2.5 px-3 rounded-lg border border-[#1f2029] bg-[#111218] hover:border-red-500/50 hover:bg-red-955/15 text-white font-extrabold text-[9.5px] text-left uppercase transition-all tracking-wide flex items-center gap-1.5 shadow"
+                    className="py-2.5 px-3 rounded-lg border border-[#1f2029] bg-[#111218] hover:border-red-500/50 hover:bg-red-950/15 text-white font-extrabold text-[9.5px] text-left uppercase transition-all tracking-wide flex items-center gap-1.5 shadow"
                   >
                     {haz.type}
                   </button>
